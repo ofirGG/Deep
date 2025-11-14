@@ -136,11 +136,12 @@ class SubsetDataset(Dataset):
         # TODO:
         #  Return the item at index + offset from the source dataset.
         #  Raise an IndexError if index is out of bounds.
-        # ====== YOUR CODE: ======
-        raise NotImplementedError()
-        # ========================
+        try:
+            if index < 0 or index >= self.subset_len:
+                raise ValueError("Index out of range")
+            return self.source_dataset.__getitem__(index + self.offset)
+        except ValueError:
+            raise IndexError("Index out of range")
 
     def __len__(self):
-        # ====== YOUR CODE: ======
-        raise NotImplementedError()
-        # ========================
+        return self.subset_len
