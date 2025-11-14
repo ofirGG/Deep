@@ -20,7 +20,7 @@ def random_labelled_image(
     :return: A tuple containing the generated image tensor and it's label.
     """
     label : int = random.randint(0, num_classes - 1)
-    image = torch.randint(low, high, size = shape, dtype=dtype)
+    image : torch.Tensor = torch.randint(low, high, size = shape, dtype=dtype)
     return image, label
 
 
@@ -34,18 +34,12 @@ def torch_temporary_seed(seed: int):
     # TODO:
     #  Implement this context manager as described.
     #  See torch.random.get/set_rng_state(), torch.random.manual_seed().
-    # ====== YOUR CODE: ======
-    raise NotImplementedError()
-    # ========================
+    prev_state : torch.Tensor = torch.random.get_rng_state()
     try:
-        # ====== YOUR CODE: ======
-        raise NotImplementedError()
-        # ========================
+        torch.manual_seed(seed)
         yield
     finally:
-        # ====== YOUR CODE: ======
-        raise NotImplementedError()
-        # ========================
+        torch.random.set_rng_state(prev_state)
 
 
 class RandomImageDataset(Dataset):
