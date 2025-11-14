@@ -1,3 +1,5 @@
+import random
+import torch.random
 import torch
 from torch import Tensor
 from typing import Tuple, Iterator
@@ -17,11 +19,8 @@ def random_labelled_image(
     :param dtype: Data type of the returned image tensor.
     :return: A tuple containing the generated image tensor and it's label.
     """
-    # TODO:
-    #  Implement according to the docstring description.
-    # ====== YOUR CODE: ======
-    raise NotImplementedError()
-    # ========================
+    label : int = random.randint(0, num_classes - 1)
+    image = torch.randint(low, high, size = shape, dtype=dtype)
     return image, label
 
 
