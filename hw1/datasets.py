@@ -1,4 +1,3 @@
-import random
 import torch.random
 import torch
 from torch import Tensor
@@ -19,7 +18,7 @@ def random_labelled_image(
     :param dtype: Data type of the returned image tensor.
     :return: A tuple containing the generated image tensor and it's label.
     """
-    label : int = random.randint(0, num_classes - 1)
+    label : int = torch.randint(0, num_classes, (1,)).item() # so seed is the same
     image : torch.Tensor = torch.randint(low, high, size = shape, dtype=dtype)
     return image, label
 
@@ -74,17 +73,16 @@ class RandomImageDataset(Dataset):
         #  same index (make it deterministic per index), but don't mess-up
         #  the random state outside this method.
         #  Raise a ValueError if the index is out of range.
-        # ====== YOUR CODE: ======
-        raise NotImplementedError()
-        # ========================
+        if index >= self.num_samples or index < 0:
+            raise ValueError("Index out of range")
+        with torch_temporary_seed(index):
+            return random_labelled_image(self.image_dim, self.num_classes)
 
     def __len__(self):
         """
         :return: Number of samples in this dataset.
         """
-        # ====== YOUR CODE: ======
-        raise NotImplementedError()
-        # ========================
+        return self.num_samples
 
 
 class ImageStreamDataset(IterableDataset):
@@ -111,9 +109,8 @@ class ImageStreamDataset(IterableDataset):
         # TODO:
         #  Yield tuples to produce an iterator over random images and labels.
         #  The iterator should produce an infinite stream of data.
-        # ====== YOUR CODE: ======
-        raise NotImplementedError()
-        # ========================
+        while True:
+            yield random_labelled_image(self.image_dim, self.num_classes)
 
 
 class SubsetDataset(Dataset):
