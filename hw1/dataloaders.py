@@ -24,9 +24,15 @@ class FirstLastSampler(Sampler):
         # Implement the logic required for this sampler.
         # If the length of the data source is N, you should return indices in a
         # first-last ordering, i.e. [0, N-1, 1, N-2, ...].
-        # ====== YOUR CODE: ======
-        raise NotImplementedError()
-        # ========================
+        distance: int = 0
+        while distance < len(self.data_source) - distance - 1:
+            yield distance
+            distance += 1
+            yield len(self.data_source) - distance
+
+        if distance == len(self.data_source) - distance - 1:
+            #not neglecting the middle element
+            yield distance
 
     def __len__(self):
         return len(self.data_source)
