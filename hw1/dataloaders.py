@@ -3,7 +3,9 @@ import numpy as np
 import torch
 import torch.utils.data
 from typing import Sized, Iterator
-from torch.utils.data import Dataset, Sampler
+from torch.utils.data import Dataset, Sampler, DataLoader, SubsetRandomSampler
+
+from .datasets import SubsetDataset
 
 
 class FirstLastSampler(Sampler):
@@ -63,8 +65,31 @@ def create_train_validation_loaders(
     #     from the dataset.
     #  Hint: you can specify a Sampler class for the `DataLoader` instance
     #  you create.
-    # ====== YOUR CODE: ======
-    raise NotImplementedError()
-    # ========================
 
+
+    validation_dataset: Dataset = SubsetDataset(
+        dataset,
+        int(validation_ratio * len(dataset))
+    )
+    validation_sampler : Sampler = SubsetRandomSampler(validation_dataset)
+
+    train_dataset : Dataset = SubsetDataset(
+        dataset,
+        len(dataset) - len(validation_dataset),
+        offset=len(validation_dataset)
+    )
+    train_sampler : Sampler = SubsetRandomSampler(train_dataset)
+
+    dl_train : DataLoader = DataLoader(
+        train_dataset,
+        sampler=train_sampler,
+        batch_size=batch_size,
+        num_workers=num_workers,
+    )
+    dl_valid : DataLoader = DataLoader(
+        validation_dataset,
+        sampler = validation_sampler,
+        batch_size=batch_size,
+        num_workers=num_workers
+    )
     return dl_train, dl_valid
