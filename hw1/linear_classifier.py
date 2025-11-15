@@ -48,9 +48,8 @@ class LinearClassifier(object):
         y_pred, class_scores = None, None
         # ====== YOUR CODE: ======
         x = BiasTrick()(x)
-        clsss_scores =  torch.matmul(x, self.weights)
-        y_pred = torch.argmax(clsss_scores, dim=1)
-
+        class_scores =  torch.matmul(x, self.weights)
+        y_pred = torch.argmax(class_scores, dim=1)
         # ========================
 
         return y_pred, class_scores
