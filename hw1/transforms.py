@@ -45,6 +45,7 @@ class BiasTrick(object):
     1 to each sample in a given tensor.
     """
 
+
     def __call__(self, x: torch.Tensor):
         """
         :param x: A pytorch tensor of shape (D,) or (N1,...Nk, D).
@@ -59,6 +60,7 @@ class BiasTrick(object):
         # TODO:
         #  Add a 1 at the beginning of the given tensor's feature dimension.
         #  Hint: See torch.cat().
-        # ====== YOUR CODE: ======
-        raise NotImplementedError()
-        # ========================
+        shape : tuple = x.shape[:-1] + (1,)
+        padding_tensor : torch.Tensor = torch.ones(shape, dtype=x.dtype)
+
+        return torch.cat((padding_tensor, x), dim=len(x.shape)-1)
