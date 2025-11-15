@@ -55,15 +55,17 @@ class SVMHingeLoss(ClassifierLoss):
         row_indexes = torch.arange(x_scores.shape[0])
         ground_truth_scores = x_scores[row_indexes,y]
         ground_truth_scores = ground_truth_scores.unsqueeze(1)
-        loss_matrix = torch.clamp(x_scores - ground_truth_scores + self.delta, min=0)
+        margin_loss_mat : torch.Tensor = x_scores - ground_truth_scores + self.delta
+        loss_matrix = torch.clamp(margin_loss_mat, min=0)
         loss_matrix[row_indexes, y] = 0 # correct class loss is 0
 
-        margin_loss : torch.Tensor = torch.sum(loss_matrix) / x.shape[0]
+        loss : torch.Tensor = torch.sum(loss_matrix) / x.shape[0]
         # ========================
-        return margin_loss
+
         # TODO: Save what you need for gradient calculation in self.grad_ctx
         # ====== YOUR CODE: ======
-
+        self.grad_ctx["loss_mat"] = loss_matrix
+        self.grad_ctx["x"] = x
         # ========================
 
         return loss
@@ -81,7 +83,17 @@ class SVMHingeLoss(ClassifierLoss):
 
         grad = None
         # ====== YOUR CODE: ======
-        raise NotImplementedError()
-        # ========================
+        loss_mat : torch.Tensor = self.grad_ctx["loss_mat"]
+        x : torch.Tensor = self.grad_ctx["x"]
+        boolean_loss_mat = (loss_mat > 0).float()
 
+        #the condition j != y_i is already baked into the boolean_loos_mat
+
+        """THE CODE DOESNT WORK YET"""
+
+        grad = torch.transpose(x, dim0=0, dim1=1) @ boolean_loss_mat
+        grad /= x.shape[0]
+        assert (x.shape[1],boolean_loss_mat.shape[1]) == grad.shape
+        # ========================
+        raise NotImplementedError()
         return grad
