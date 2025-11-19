@@ -1,6 +1,8 @@
 import abc
 import torch
 
+from .transforms import BiasTrick
+
 
 class ClassifierLoss(abc.ABC):
     """
@@ -66,6 +68,7 @@ class SVMHingeLoss(ClassifierLoss):
         # ====== YOUR CODE: ======
         self.grad_ctx["loss_mat"] = loss_matrix
         self.grad_ctx["x"] = x
+        self.grad_ctx["y"] = y
         # ========================
 
         return loss
@@ -85,15 +88,15 @@ class SVMHingeLoss(ClassifierLoss):
         # ====== YOUR CODE: ======
         loss_mat : torch.Tensor = self.grad_ctx["loss_mat"]
         x : torch.Tensor = self.grad_ctx["x"]
+        y : torch.Tensor = self.grad_ctx["y"]
+
         boolean_loss_mat = (loss_mat > 0).float()
-
-        #the condition j != y_i is already baked into the boolean_loos_mat
-
+        row_sums = torch.sum(boolean_loss_mat, dim=1)
         """THE CODE DOESNT WORK YET"""
+        boolean_loss_mat[torch.arange(x.shape[0]), y] = -row_sums
+        x_biased = BiasTrick()(x)
 
-        grad = torch.transpose(x, dim0=0, dim1=1) @ boolean_loss_mat
-        grad /= x.shape[0]
-        assert (x.shape[1],boolean_loss_mat.shape[1]) == grad.shape
+        grad = x_biased.T @ boolean_loss_mat
+        grad /= x_biased.shape[0]
         # ========================
-        raise NotImplementedError()
         return grad
