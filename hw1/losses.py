@@ -92,7 +92,7 @@ class SVMHingeLoss(ClassifierLoss):
 
         boolean_loss_mat = (loss_mat > 0).float()
         row_sums = torch.sum(boolean_loss_mat, dim=1)
-        """THE CODE DOESNT WORK YET"""
+
         boolean_loss_mat[torch.arange(x.shape[0]), y] = -row_sums
         x_biased = BiasTrick()(x)
 
