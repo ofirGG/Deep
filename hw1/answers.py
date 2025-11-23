@@ -37,13 +37,6 @@ information, thus when the test comes, it will fail much more, as it will
 this time miss-identify the correct labels (as it overffited to wrong data).
 
 
-Write your answer using **markdown** and $\LaTeX$:
-```python
-# A code block
-a = 2
-```
-An equation: $e^{i\pi} -1 = 0$
-
 """
 
 part1_q2 = r"""
@@ -53,13 +46,6 @@ His method trains on the test data, thus introducing data leakage, by
 fine-tuning $\lambda$ to be the best fitted to this specific test data.
 Now there is the risk $\lambda$ is overffitted to the test set, and not generalised.
 
-
-Write your answer using **markdown** and $\LaTeX$:
-```python
-# A code block
-a = 2
-```
-An equation: $e^{i\pi} -1 = 0$
 
 """
 

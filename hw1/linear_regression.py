@@ -32,7 +32,7 @@ class LinearRegressor(BaseEstimator, RegressorMixin):
 
         y_pred = None
         # ====== YOUR CODE: ======
-        raise NotImplementedError()
+        y_pred = X @ self.weights_
         # ========================
 
         return y_pred
@@ -51,7 +51,11 @@ class LinearRegressor(BaseEstimator, RegressorMixin):
 
         w_opt = None
         # ====== YOUR CODE: ======
-        raise NotImplementedError()
+        n_samples, n_features = X.shape
+        lambda_I = self.reg_lambda * np.eye(n_features)
+        lambda_I[0, 0] = 0
+        XtX = X.T @ X
+        w_opt = np.linalg.pinv(XtX + lambda_I * n_samples) @ X.T @ y
         # ========================
 
         self.weights_ = w_opt
@@ -77,7 +81,12 @@ def fit_predict_dataframe(
     """
     # TODO: Implement according to the docstring description.
     # ====== YOUR CODE: ======
-    raise NotImplementedError()
+    y = df[target_name].values
+    if feature_names is None:
+        X = df.drop(columns=[target_name]).values
+    else:
+        X = df[feature_names].values
+    y_pred = model.fit_predict(X, y)
     # ========================
     return y_pred
 
@@ -100,7 +109,9 @@ class BiasTrickTransformer(BaseEstimator, TransformerMixin):
 
         xb = None
         # ====== YOUR CODE: ======
-        raise NotImplementedError()
+        n_samples = X.shape[0]
+        ones_col = np.ones((n_samples, 1))
+        xb = np.hstack((ones_col, X))
         # ========================
 
         return xb
@@ -117,7 +128,7 @@ class BostonFeaturesTransformer(BaseEstimator, TransformerMixin):
         # TODO: Your custom initialization, if needed
         # Add any hyperparameters you need and save them as above
         # ====== YOUR CODE: ======
-        raise NotImplementedError()
+        
         # ========================
 
     def fit(self, X, y=None):
@@ -139,7 +150,12 @@ class BostonFeaturesTransformer(BaseEstimator, TransformerMixin):
 
         X_transformed = None
         # ====== YOUR CODE: ======
-        raise NotImplementedError()
+        X_trans = X.copy()
+        X_trans[:, 0] = np.log(X_trans[:, 0])
+        X_trans[:, 12] = np.log(X_trans[:, 12])
+        X_trans = np.delete(X_trans, 3, axis=1)
+        poly = PolynomialFeatures(degree=self.degree, include_bias=False)
+        X_transformed = poly.fit_transform(X_trans)        
         # ========================
 
         return X_transformed
@@ -163,8 +179,23 @@ def top_correlated_features(df: DataFrame, target_feature, n=5):
     # TODO: Calculate correlations with target and sort features by it
 
     # ====== YOUR CODE: ======
-    raise NotImplementedError()
-    # ========================
+# 1. Calculate correlation of all columns with the target feature
+    #    (df.corr() computes pairwise correlation of columns)
+    correlations = df.corr()[target_feature]
+    
+    # 2. Drop the target feature itself (correlation is always 1.0 with itself)
+    correlations = correlations.drop(target_feature)
+    
+    # 3. Sort by absolute value (magnitude) in descending order.
+    #    We want values close to 1 or -1 to appear first.
+    sorted_indices = np.argsort(np.abs(correlations))[::-1]
+    
+    # 4. Select the top n features based on the sorted indices
+    top_indices = sorted_indices[:n]
+    
+    # 5. Extract the names and the actual signed correlation values
+    top_n_features = correlations.index[top_indices].tolist()
+    top_n_corr = correlations.iloc[top_indices].tolist()    # ========================
 
     return top_n_features, top_n_corr
 
@@ -179,7 +210,7 @@ def mse_score(y: np.ndarray, y_pred: np.ndarray):
 
     # TODO: Implement MSE using numpy.
     # ====== YOUR CODE: ======
-    raise NotImplementedError()
+    mse = np.mean((y - y_pred) ** 2)
     # ========================
     return mse
 
@@ -194,7 +225,10 @@ def r2_score(y: np.ndarray, y_pred: np.ndarray):
 
     # TODO: Implement R^2 using numpy.
     # ====== YOUR CODE: ======
-    raise NotImplementedError()
+    ss_res = np.sum((y - y_pred) ** 2)
+    y_mean = np.mean(y)
+    ss_tot = np.sum((y - y_mean) ** 2)
+    r2 = 1 - (ss_res / ss_tot)    
     # ========================
     return r2
 
@@ -226,8 +260,44 @@ def cv_best_hyperparams(
     #    names as keys.
     #  - You can use MSE or R^2 as a score.
 
-    # ====== YOUR CODE: ======
-    raise NotImplementedError()
+    # ====== YOUR CODE: ======    
+    X = np.array(X)
+    y = np.array(y)
+    
+    all_params = model.get_params()
+    deg_key = [k for k in all_params if 'degree' in k][0]
+    lam_key = [k for k in all_params if 'reg_lambda' in k][0]
+    indices = np.arange(len(y))
+    folds_indices = np.array_split(indices, k_folds)
+    
+    best_avg_mse = float('inf')
+    best_params = {}
+    
+    for deg in degree_range:
+        for lam in lambda_range:
+            fold_mses = []
+            
+            params_to_set = {deg_key: deg, lam_key: lam}
+            model.set_params(**params_to_set)
+            
+            for i in range(k_folds):
+                val_idx = folds_indices[i]
+                train_idx = np.concatenate([folds_indices[j] for j in range(k_folds) if j != i])
+                
+                X_train_fold, y_train_fold = X[train_idx], y[train_idx]
+                X_val_fold, y_val_fold = X[val_idx], y[val_idx]
+                
+                model.fit(X_train_fold, y_train_fold)
+                y_pred_fold = model.predict(X_val_fold)
+                
+                mse = np.mean((y_val_fold - y_pred_fold) ** 2)
+                fold_mses.append(mse)
+            
+            avg_mse = np.mean(fold_mses)
+
+            if avg_mse < best_avg_mse:
+                best_avg_mse = avg_mse
+                best_params = params_to_set    
     # ========================
 
     return best_params
