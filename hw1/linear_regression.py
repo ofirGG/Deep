@@ -179,23 +179,17 @@ def top_correlated_features(df: DataFrame, target_feature, n=5):
     # TODO: Calculate correlations with target and sort features by it
 
     # ====== YOUR CODE: ======
-# 1. Calculate correlation of all columns with the target feature
     #    (df.corr() computes pairwise correlation of columns)
     correlations = df.corr()[target_feature]
-    
-    # 2. Drop the target feature itself (correlation is always 1.0 with itself)
+
     correlations = correlations.drop(target_feature)
-    
-    # 3. Sort by absolute value (magnitude) in descending order.
-    #    We want values close to 1 or -1 to appear first.
     sorted_indices = np.argsort(np.abs(correlations))[::-1]
-    
-    # 4. Select the top n features based on the sorted indices
+
     top_indices = sorted_indices[:n]
-    
-    # 5. Extract the names and the actual signed correlation values
+
     top_n_features = correlations.index[top_indices].tolist()
-    top_n_corr = correlations.iloc[top_indices].tolist()    # ========================
+    top_n_corr = correlations.iloc[top_indices].tolist()
+    # ========================
 
     return top_n_features, top_n_corr
 
