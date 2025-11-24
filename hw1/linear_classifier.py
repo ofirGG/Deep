@@ -107,13 +107,8 @@ class LinearClassifier(object):
             #     using the weight_decay parameter.
 
             # ====== YOUR CODE: ======
-            
-            if epoch_idx == 0:
-                if hasattr(dl_train, 'sampler') and hasattr(dl_train.sampler, 'indices'):
-                    dl_train.sampler.indices = list(range(len(dl_train.dataset)))
-                if hasattr(dl_valid, 'sampler') and hasattr(dl_valid.sampler, 'indices'):
-                    dl_valid.sampler.indices = list(range(len(dl_valid.dataset)))
 
+            num_samples_train : int = 0
             for x_batch, y_batch in dl_train:
                 y_pred, x_scores = self.predict(x_batch)
                 
@@ -128,9 +123,10 @@ class LinearClassifier(object):
                 
                 average_loss += (data_loss.item() + reg_loss.item()) * x_batch.shape[0]
                 total_correct += (y_pred == y_batch).float().sum().item()
+                num_samples_train += x_batch.shape[0]
 
-            train_res.accuracy.append((total_correct / len(dl_train.dataset)) * 100)
-            train_res.loss.append(average_loss / len(dl_train.dataset))
+            train_res.accuracy.append((total_correct / num_samples_train) * 100)
+            train_res.loss.append(average_loss / num_samples_train)
 
             valid_correct = 0
             valid_loss_sum = 0
