@@ -107,60 +107,47 @@ class LinearClassifier(object):
             #     using the weight_decay parameter.
 
             # ====== YOUR CODE: ======
-            cum_loss = 0
-            num_samples = 0
             
+            if epoch_idx == 0:
+                if hasattr(dl_train, 'sampler') and hasattr(dl_train.sampler, 'indices'):
+                    dl_train.sampler.indices = list(range(len(dl_train.dataset)))
+                if hasattr(dl_valid, 'sampler') and hasattr(dl_valid.sampler, 'indices'):
+                    dl_valid.sampler.indices = list(range(len(dl_valid.dataset)))
+
             for x_batch, y_batch in dl_train:
-                # 1. Calculate Loss and Gradient
-                # Assuming loss_fn returns (loss, grad) based on current weights
-                batch_loss, grad = loss_fn(x_batch, y_batch, self.weights)
+                y_pred, x_scores = self.predict(x_batch)
                 
-                # 2. Add Regularization (L2)
-                # Loss term: (lambda / 2) * ||w||^2
-                # Gradient term: lambda * w
-                # Note: We assume weights are tensors/arrays compatible with the math operations
-                batch_loss += 0.5 * weight_decay * (self.weights ** 2).sum()
-                grad += weight_decay * self.weights
+                data_loss = loss_fn(x_batch, y_batch, x_scores, y_pred)
                 
-                # 3. Update Weights (SGD Step)
+                grad = loss_fn.grad()
+                grad[1:] += weight_decay * self.weights[1:]
+                
                 self.weights -= learn_rate * grad
                 
-                # 4. Metrics Calculation
-                # Predict to check accuracy
-                y_pred, _ = self.predict(x_batch)
-                num_correct = (y_pred == y_batch).sum()
+                reg_loss = (weight_decay / 2) * torch.norm(self.weights[1:])**2
                 
-                total_correct += num_correct
-                cum_loss += batch_loss * len(x_batch) # Weighted by batch size
-                num_samples += len(x_batch)
-            
-            # Store epoch results for Training
-            train_res.loss.append(cum_loss / num_samples)
-            train_res.accuracy.append(total_correct / num_samples)
-            
-            # --- Validation Loop ---
-            # Evaluate on validation set (No weight updates!)
-            valid_cum_loss = 0
+                average_loss += (data_loss.item() + reg_loss.item()) * x_batch.shape[0]
+                total_correct += (y_pred == y_batch).float().sum().item()
+
+            train_res.accuracy.append((total_correct / len(dl_train.dataset)) * 100)
+            train_res.loss.append(average_loss / len(dl_train.dataset))
+
             valid_correct = 0
-            valid_samples = 0
+            valid_loss_sum = 0
             
-            for x_valid, y_valid in dl_valid:
-                # Calculate loss (Forward only)
-                v_loss, _ = loss_fn(x_valid, y_valid, self.weights)
-                
-                # Add Regularization to validation loss for fair comparison
-                v_loss += 0.5 * weight_decay * (self.weights ** 2).sum()
-                
-                # Calculate accuracy
-                y_pred_valid, _ = self.predict(x_valid)
-                valid_correct += (y_pred_valid == y_valid).sum()
-                
-                valid_cum_loss += v_loss * len(x_valid)
-                valid_samples += len(x_valid)
-                
-            # Store epoch results for Validation
-            valid_res.loss.append(valid_cum_loss / valid_samples)
-            valid_res.accuracy.append(valid_correct / valid_samples)
+            with torch.no_grad():
+                for x_valid, y_valid in dl_valid:
+                    y_val_pred, x_val_scores = self.predict(x_valid)
+                    loss_val = loss_fn(x_valid, y_valid, x_val_scores, y_val_pred)
+                    
+                    reg_loss_val = (weight_decay / 2) * torch.norm(self.weights[1:])**2
+                    
+                    valid_loss_sum += (loss_val.item() + reg_loss_val.item()) * x_valid.shape[0]
+                    valid_correct += (y_val_pred == y_valid).float().sum().item()
+
+            valid_res.accuracy.append((valid_correct / len(dl_valid.dataset)) * 100)
+            valid_res.loss.append(valid_loss_sum / len(dl_valid.dataset))
+
             # # ========================
             print(".", end="")
 
@@ -181,10 +168,11 @@ class LinearClassifier(object):
         #  The output shape should be (n_classes, C, H, W).
 
         # ====== YOUR CODE: ======
-        w = self.weights
-        if has_bias:
-            w = w[1:] # Strip bias row -> (D, C)
-        w_images = w.t().view(self.n_classes, *img_shape)        
+        c, h, w = img_shape
+        num_features = c * h * w
+        w_features = self.weights[-num_features:]
+        w_features = w_features.t()
+        w_images = w_features.view(self.n_classes, *img_shape)  
         # ========================
 
         return w_images
@@ -197,9 +185,7 @@ def hyperparams():
     #  Manually tune the hyperparameters to get the training accuracy test
     #  to pass.
     # ====== YOUR CODE: ======
-    hp['weight_std'] = 0.01
-    hp['learn_rate'] = 0.2
-    hp['weight_decay'] = 0.1
+    hp = dict(weight_std=0.01, learn_rate=0.01, weight_decay=0.001)
     # ========================
 
     return hp
