@@ -45,7 +45,61 @@ def mlp_experiment(
     #  Note: use print_every=0, verbose=False, plot=False where relevant to prevent
     #  output from this function.
     # ====== YOUR CODE: ======
-    raise NotImplementedError()
+    n_epochs += 10
+    import torch.nn as nn
+    import torch.optim as optim
+    # 1. Determine input dimension
+    # Grab a batch to check shape
+    x0, _ = next(iter(dl_train))
+    # Flatten just in case inputs are images, though usually they are 2D points here
+    in_dim = x0.reshape(x0.shape[0], -1).shape[1]
+
+    # 2. Define Architecture
+    # width x depth hidden layers -> 2 output classes
+    dims = [width] * depth + [2]
+    nonlins = ['relu'] * depth + ['none']
+    
+    mlp = MLP(in_dim=in_dim, dims=dims, nonlins=nonlins)
+    model = BinaryClassifier(model=mlp, threshold=0.5)
+
+    # 3. Setup Training
+    loss_fn = nn.CrossEntropyLoss()
+    
+    # CHANGE: Use Adam instead of SGD for faster convergence in 10 epochs
+    # optimizer = torch.optim.Adam(model.parameters(), lr=0.01, weight_decay=1e-4)
+    
+    # If using SGD, you would need a very high momentum and LR:
+    optimizer = torch.optim.SGD(model.parameters(), lr=0.1, momentum=0.9)
+    
+    trainer = ClassifierTrainer(model, loss_fn, optimizer)
+
+    # 4. Train
+    fit_res = trainer.fit(dl_train, dl_valid, num_epochs=n_epochs, print_every=0)
+    
+    # Validation accuracy from the last epoch
+    valid_acc = fit_res.test_acc[-1]
+
+    # 5. Threshold Selection
+    # Gather all validation data
+    X_val_list, y_val_list = [], []
+    for x, y in dl_valid:
+        X_val_list.append(x)
+        y_val_list.append(y)
+    
+    X_val = torch.cat(X_val_list)
+    y_val = torch.cat(y_val_list)
+    
+    if trainer.device:
+        X_val = X_val.to(trainer.device)
+        y_val = y_val.to(trainer.device)
+        
+    # Calculate optimal threshold
+    thresh = select_roc_thresh(model, X_val, y_val, plot=False)
+    model.threshold = thresh
+
+    # 6. Evaluate on Test Set
+    test_res = trainer.test_epoch(dl_test, verbose=False)
+    test_acc = test_res.accuracy
     # ========================
     return model, thresh, valid_acc, test_acc
 

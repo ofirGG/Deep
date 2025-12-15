@@ -234,7 +234,10 @@ def part3_arch_hp():
     out_activation = "none"  # activation function to apply at the output layer
     # TODO: Tweak the MLP architecture hyperparameters.
     # ====== YOUR CODE: ======
-    raise NotImplementedError()
+    n_layers = 2
+    hidden_dims = 32
+    activation = "relu"
+    out_activation = "none"
     # ========================
     return dict(
         n_layers=n_layers,
@@ -256,7 +259,11 @@ def part3_optim_hp():
     #    What you returns needs to be a callable, so either an instance of one of the
     #    Loss classes in torch.nn or one of the loss functions from torch.nn.functional.
     # ====== YOUR CODE: ======
-    raise NotImplementedError()
+    loss_fn = torch.nn.CrossEntropyLoss()
+    
+    lr = 0.01
+    weight_decay = 1e-3
+    momentum = 0.9
     # ========================
     return dict(lr=lr, weight_decay=weight_decay, momentum=momentum, loss_fn=loss_fn)
 
@@ -264,40 +271,90 @@ def part3_optim_hp():
 part3_q1 = r"""
 **Your answer:**
 
+**1. Definitions of Error Types**
 
-Write your answer using **markdown** and $\LaTeX$:
-```python
-# A code block
-a = 2
-```
-An equation: $e^{i\pi} -1 = 0$
+* **Optimization Error:**
+    This is the difference between the empirical loss of the specific model our algorithm found, $h$, and the minimum possible empirical loss achievable by any model in our hypothesis class, $h^*$:
+    $$ \epsilon_{opt} = L_{train}(h) - L_{train}(h^*) $$
+    It measures the failure of the optimization algorithm (e.g., SGD getting stuck in a local minimum or converging too slowly).
 
+* **Generalization Error (Estimation Error):**
+    This is the difference between the expected loss (true risk) on unseen data and the empirical loss on the training data:
+    $$ \epsilon_{gen} = L_{test}(h) - L_{train}(h) $$
+    It measures how well the model applies what it learned to new data (i.e., the degree of **overfitting**).
+
+* **Approximation Error:**
+    This is the difference between the best possible model in our hypothesis class, $h^*$, and the optimal model theoretically possible (Bayes optimal), $h_{bayes}$:
+    $$ \epsilon_{app} = L(h^*) - L(h_{bayes}) $$
+    It measures the limitations of the model architecture itself (i.e., **underfitting** due to a lack of capacity).
+
+---
+
+**2. Qualitative Analysis of the Model**
+
+Based on the loss and accuracy plots provided (specifically the second set of graphs with unstable test metrics):
+
+1.  **Optimization Error: Low**
+    * **Observation:** The training loss (blue line in `test_loss`) decreases smoothly and consistently, stabilizing at a relatively low value (~0.15). The training accuracy reaches a high value (~94%).
+    * **Conclusion:** The optimizer successfully minimized the objective function on the training set. There is no sign of getting stuck at a high loss value.
+
+2.  **Generalization Error: High**
+    * **Observation:** There is a significant and erratic gap between the training curves (blue) and the test curves (orange). While the training loss is low and stable, the test loss spikes repeatedly and remains much higher. Similarly, the test accuracy fluctuates wildly (between 75% and 92%) compared to the stable ~94% training accuracy.
+    * **Conclusion:** The model is **overfitting**. It performs significantly worse on unseen data than on the data it was trained on. I would definitely take measures to decrease this (e.g., adding Dropout, L2 regularization, or more data).
+
+3.  **Approximation Error: Low**
+    * **Observation:** The model achieves very high accuracy (~94%) on the training data.
+    * **Conclusion:** The hypothesis class (the MLP architecture) is sufficiently complex to capture the underlying patterns in the data. If the approximation error were high, the model would fail to fit even the training set (high bias/underfitting), which is not the case here.
 """
 
 part3_q2 = r"""
 **Your answer:**
 
+**1. Optimize for Low FPR (Minimize False Positives)**
+* **Goal:** We want to be very sure before predicting "Positive". We are willing to miss some real positives to avoid crying wolf.
+* **Scenario: Spam Email Filter**
+    * **False Positive (High Cost):** A legitimate, important email (e.g., a job offer or a message from family) is classified as spam and hidden in the junk folder. The user never sees it, potentially causing significant personal or professional harm.
+    * **False Negative (Low Cost):** A spam email lands in the main inbox. The user simply deletes it. It is a minor annoyance but not a disaster.
+    * **Conclusion:** In this case, we enforce a strict threshold to keep FPR very low, even if it means the FNR increases (some spam gets through).
 
-Write your answer using **markdown** and $\LaTeX$:
-```python
-# A code block
-a = 2
-```
-An equation: $e^{i\pi} -1 = 0$
-
+**2. Optimize for Low FNR (Minimize False Negatives)**
+* **Goal:** We want to catch every single "Positive" case. We are willing to deal with false alarms to ensure nothing is missed.
+* **Scenario: Screening for a Deadly Disease (e.g., Cancer or COVID-19)**
+    * **False Negative (High Cost):** A sick patient is diagnosed as healthy. They are sent home without treatment, leading to worsening health or spreading the infection to others. This outcome is potentially fatal.
+    * **False Positive (Low Cost):** A healthy patient is flagged as potentially sick. They undergo further, more precise testing (like a biopsy or PCR). This causes temporary anxiety and financial cost, but the patient remains safe.
+    * **Conclusion:** In this case, we prefer a "sensitive" model with a very low FNR to ensure safety, accepting a higher FPR (more false alarms) as a necessary trade-off.
 """
 
 part3_q3 = r"""
 **Your answer:**
 
+**1. Fixed Depth, Width Varies (Columns)**
+* **Observation:** Looking at the columns (e.g., the left-most column with `depth=1` or right-most with `depth=4`), we see that increasing the `width` significantly improves the model's ability to fit the data.
+    * **Small Width (width=2):** The model heavily underfits. The decision boundary is overly simplistic (nearly linear or simple corners) because the information is compressed into a 2-dimensional bottleneck at every layer, losing the necessary dimensionality to disentangle the non-linear "moons".
+    * **Large Width (width=32):** The model produces a smooth, confident boundary that fits the crescent shapes well.
+* **Explanation:** Width corresponds to the dimensionality of the feature space. By increasing width, we give the network more "neurons" to act as basis functions. This allows the model to project the data into a higher-dimensional space where the classes are more easily separable, resulting in a flexible and smooth decision boundary.
 
-Write your answer using **markdown** and $\LaTeX$:
-```python
-# A code block
-a = 2
-```
-An equation: $e^{i\pi} -1 = 0$
+**2. Fixed Width, Depth Varies (Rows)**
+* **Observation:** Looking at the rows (e.g., the middle row with `width=8`), increasing `depth` changes the complexity of the boundary texture.
+    * **Shallow (depth=1):** The boundary is very smooth and simple.
+    * **Deep (depth=4):** The boundary becomes more intricate, "wiggly," and sharp. For the narrow case (`width=2`), increasing depth actually hurt performance (vanishing gradients or bottleneck issues), but for `width=8` and `32`, it allowed for finer adjustments to the boundary.
+* **Explanation:** Depth allows the model to learn hierarchical features and compose simple non-linearities into highly complex functions. While a shallow network learns a smooth global approximation, a deep network constructs the boundary piecewise, leading to sharper transitions and the ability to capture more detailed/high-frequency patterns in the data.
 
+**3. Comparison: `depth=1, width=32` vs. `depth=4, width=8`**
+* **Shallow & Wide (`depth=1, width=32`):** (Bottom Left)
+    * **Boundary:** Very smooth, broad curvature.
+    * **Performance:** High accuracy (~89.4%).
+    * **Mechanism:** Acts as a universal approximator using many simple basis functions in parallel. It captures the global trend well but lacks "sharpness."
+* **Deep & Narrow (`depth=4, width=8`):** (Top Right)
+    * **Boundary:** Sharper, more segmented/intricate boundary.
+    * **Performance:** Slightly higher accuracy (~90.2%).
+    * **Mechanism:** Uses composition of functions to approximate the complex topology efficiently. It fits the specific "wiggles" of the noise better than the smooth wide model.
+* **Conclusion:** The Deep & Narrow model is more parameter-efficient for capturing complex non-linearities (higher accuracy with similar computational budget), but the Wide & Shallow model produces a smoother, "safer" boundary that may be more robust to noise in some regions.
+
+**4. Threshold Selection Effect**
+* **Did it improve results?** Yes, it likely improved (or at least maintained) the results compared to a default threshold of 0.5.
+* **Why?** Neural networks trained with Cross-Entropy loss output probabilities, but these probabilities are not always perfectly calibrated (e.g., the model might be "timid," outputting max probabilities of 0.45 for a positive class). If we used a fixed threshold of 0.5, we might classify everything as negative (Accuracy = 50%).
+    By selecting the threshold on the **validation set** (using ROC analysis to maximize the TPR-FPR difference), we find the optimal operating point that separates the classes given the model's actual output distribution. This effectively "calibrates" the final binary decision, maximizing accuracy on unseen test data.
 """
 
 # ==============
