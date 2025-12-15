@@ -362,7 +362,15 @@ class Dropout(Layer):
         #  Notice that contrary to previous layers, this layer behaves
         #  differently a according to the current training_mode (train/test).
         # ====== YOUR CODE: ======
-        raise NotImplementedError()
+        if self.training_mode is False:
+            return x
+
+        keep_prob = 1 - self.p
+        mask = torch.bernoulli(torch.full_like(x, keep_prob))
+        
+        out = (x * mask) / keep_prob
+        
+        self.grad_cache['mask'] = mask
         # ========================
 
         return out
@@ -370,7 +378,13 @@ class Dropout(Layer):
     def backward(self, dout):
         # TODO: Implement the dropout backward pass.
         # ====== YOUR CODE: ======
-        raise NotImplementedError()
+        if self.training_mode is False:
+            return dout
+
+        mask = self.grad_cache['mask']
+        keep_prob = 1 - self.p
+        
+        dx = (dout * mask) / keep_prob
         # ========================
 
         return dx
@@ -490,18 +504,18 @@ class MLP(Layer):
         }
         
         Act = act_layer_map.get(activation.lower(), ReLU)
-
+        
         current_dim = in_features
+        
         for h_dim in hidden_features:
-            
             layers.append(Linear(current_dim, h_dim, **kw))
             layers.append(Act())
-
+            
             if dropout > 0:
                 layers.append(Dropout(dropout))
-
+                
             current_dim = h_dim
-
+            
         layers.append(Linear(current_dim, num_classes, **kw))
         # ========================
 

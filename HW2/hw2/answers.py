@@ -85,7 +85,9 @@ def part2_overfit_hp():
     wstd, lr, reg = 0, 0, 0
     # TODO: Tweak the hyperparameters until you overfit the small dataset.
     # ====== YOUR CODE: ======
-    raise NotImplementedError()
+    wstd = 0.1
+    lr = 0.05
+    reg = 0.0
     # ========================
     return dict(wstd=wstd, lr=lr, reg=reg)
 
@@ -102,7 +104,11 @@ def part2_optim_hp():
     # TODO: Tweak the hyperparameters to get the best results you can.
     # You may want to use different learning rates for each optimizer.
     # ====== YOUR CODE: ======
-    raise NotImplementedError()
+    wstd = 0.1 
+    lr_vanilla = 0.02  
+    lr_momentum = 0.005 
+    lr_rmsprop = 0.0002 
+    reg = 0.001
     # ========================
     return dict(
         wstd=wstd,
@@ -121,7 +127,8 @@ def part2_dropout_hp():
     # TODO: Tweak the hyperparameters to get the model to overfit without
     # dropout.
     # ====== YOUR CODE: ======
-    raise NotImplementedError()
+    wstd = 0.1
+    lr = 5e-3
     # ========================
     return dict(wstd=wstd, lr=lr)
 
@@ -129,40 +136,87 @@ def part2_dropout_hp():
 part2_q1 = r"""
 **Your answer:**
 
+**1. No-dropout (Blue) vs. Dropout (Orange/Green)**
 
-Write your answer using **markdown** and $\LaTeX$:
-```python
-# A code block
-a = 2
-```
-An equation: $e^{i\pi} -1 = 0$
+**Yes, the graphs match the expected behavior of dropout regularization.**
 
+* **No-dropout (`dropout=0` - Blue line):**
+    * **Behavior:** This model exhibits classic **overfitting**. It achieves very high training accuracy (>80%) and very low training loss, indicating it has memorized the training data.
+    * **Evidence:** In the `test_loss` graph, the blue line starts low but then **increases dramatically** as training progresses. This divergence between the decreasing training loss and increasing test loss is the hallmark of overfitting—the model is becoming less generalizable as it continues to train.
+
+* **With Dropout (`dropout=0.4` - Orange line):**
+    * **Behavior:** The dropout acts as a regularizer, making it harder for the model to memorize the training data.
+    * **Evidence:** The training accuracy is significantly lower (~45%) compared to the no-dropout model, but the **test loss is stable** and does not explode like the blue line. Crucially, the `test_acc` (bottom right) for the orange line eventually surpasses the blue line (reaching ~28% vs ~25%), showing that the model generalizes better to unseen data despite performing "worse" on the training set.
+
+**2. Low-dropout (0.4) vs. High-dropout (0.8)**
+
+The graphs demonstrate the trade-off between regularization and model capacity:
+
+* **Low Dropout (`dropout=0.4` - Orange):** This setting strikes a good balance. It provides enough noise to prevent the overfitting seen in the blue line (keeping test loss flat) while still allowing enough information to pass through for the network to learn patterns (training accuracy rises to ~45%).
+* **High Dropout (`dropout=0.8` - Green):** This setting is **too aggressive** and leads to **underfitting**.
+    * **Evidence:** In the `train_loss` graph, the green line barely decreases, and in the `train_acc` graph, it hovers near 10-15% (which is close to random guessing for 10 classes). By dropping 80% of the neurons, the effective capacity of the network is reduced so drastically that it cannot learn the underlying function of the data at all.
 """
 
 part2_q2 = r"""
 **Your answer:**
 
+**Yes, it is possible.**
 
-Write your answer using **markdown** and $\LaTeX$:
-```python
-# A code block
-a = 2
-```
-An equation: $e^{i\pi} -1 = 0$
+It is possible for the test loss to decrease while test accuracy decreases because they measure different things:
+* **Accuracy** is a **discrete** metric: It only cares about which class has the highest score. It does not matter if the correct class wins by 0.01 or by 0.99.
+* **Cross-Entropy Loss** is a **continuous** metric: It cares about the **confidence** (probability) assigned to the correct class.
 
+**How it happens:**
+Imagine a scenario where the model is evaluated on a test set:
+1.  **Improving Confidence on Easy Samples:** For the majority of samples that the model is *already* classifying correctly, the model becomes much more confident (e.g., the probability of the correct class rises from 0.6 to 0.99). This causes a **massive drop** in the total cross-entropy loss.
+2.  **failing Borderline Samples:** Simultaneously, a few "borderline" samples that were previously barely correct (e.g., probability 0.51) shift slightly to become barely incorrect (e.g., probability 0.49). This causes the **accuracy to drop**.
+
+In this case, the significant reduction in loss from step #1 outweighs the small increase in loss from step #2, resulting in a **lower average loss** even though the **count of correct predictions (accuracy)** has gone down.
 """
 
 part2_q3 = r"""
 **Your answer:**
 
+**1. GD vs. SGD**
 
-Write your answer using **markdown** and $\LaTeX$:
-```python
-# A code block
-a = 2
-```
-An equation: $e^{i\pi} -1 = 0$
+* **Similarities:**
+    * Both are iterative optimization algorithms used to minimize a loss function $L(\theta)$.
+    * Both update parameters $\theta$ by moving in the opposite direction of the gradient: $\theta_{t+1} = \theta_t - \eta \nabla L$.
+    * Both require a differentiable loss function and hyperparameters like learning rate ($\eta$).
 
+* **Differences:**
+    * **Data Usage:** GD computes the gradient using the **entire dataset** for every single update step. SGD computes the gradient using only a **single sample** (or a small batch) per step.
+    * **Computation:** GD is computationally expensive per step (slow updates) but provides a stable, deterministic path. SGD is very fast per step (frequent updates) but follows a noisy, zigzagging path.
+    * **Convergence:** GD converges linearly to a local minimum. SGD oscillates around the minimum due to noise but can escape shallow local minima more easily because of that same noise.
+
+**2. Momentum in GD**
+
+**Yes, you should incorporate momentum into GD.**
+
+While momentum is famous for dampening the noise in SGD, it also solves a critical problem in full-batch GD: **poor conditioning (Ravines)**.
+In GD, if the loss landscape has a steep slope in one direction and a shallow slope in another (a ravine), standard GD will oscillate back and forth across the steep sides while making tiny progress along the shallow valley floor. Momentum accumulates velocity along the consistent direction (the valley floor) and cancels out the oscillations across the steep walls, significantly accelerating convergence even without the noise of SGD.
+
+**3. Simulating GD with Batches**
+
+**3.1. Equivalence to GD**
+**Yes, it is equivalent (assuming linearity of the derivative).**
+The loss function for the full dataset is usually the sum (or average) of the losses of individual samples: $L_{total} = \sum L_i$.
+Since the derivative is a linear operator, the gradient of the sum is the sum of the gradients:
+$$ \nabla \left( \sum_{i=1}^N L_i(\theta) \right) = \sum_{i=1}^N \nabla L_i(\theta) $$
+Therefore, accumulating the gradients (or losses) from disjoint batches and stepping once is mathematically identical to calculating the gradient over the whole dataset at once.
+
+**3.2. Out of Memory Error**
+The error occurred because you tried to do **one backward pass on the sum of the losses**.
+Most deep learning frameworks (like PyTorch) build a **computational graph** to track operations for backpropagation. By feeding batch after batch and summing the losses *without* detaching or backwarding, the framework keeps extending this massive graph in memory, storing all intermediate activations for *all* batches to eventually compute gradients. This effectively reconstructs the memory footprint of the full dataset, defeating the purpose of splitting it.
+
+**3.3. Solution**
+Instead of summing the *losses* and doing one backward pass, you should **accumulate the gradients**.
+1.  For each batch, run the forward pass and calculate loss.
+2.  Run `loss.backward()` immediately. This computes gradients and frees the graph for that batch.
+3.  Accumulate these gradients in the parameter `.grad` attributes (PyTorch does this by default if you don't call `zero_grad()`).
+4.  Repeat for all batches.
+5.  Call `optimizer.step()` only after processing all batches.
+6.  Call `optimizer.zero_grad()`.
 """
 
 

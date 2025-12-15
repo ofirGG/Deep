@@ -72,7 +72,9 @@ class VanillaSGD(Optimizer):
             #  Update the gradient according to regularization and then
             #  update the parameters tensor.
             # ====== YOUR CODE: ======
-            raise NotImplementedError()
+            if self.reg > 0:
+                dp += self.reg * p
+            p -= self.learn_rate * dp
             # ========================
 
 
@@ -91,7 +93,7 @@ class MomentumSGD(Optimizer):
 
         # TODO: Add your own initializations as needed.
         # ====== YOUR CODE: ======
-        raise NotImplementedError()
+        self.velocities = {}
         # ========================
 
     def step(self):
@@ -103,7 +105,19 @@ class MomentumSGD(Optimizer):
             # update the parameters tensor based on the velocity. Don't forget
             # to include the regularization term.
             # ====== YOUR CODE: ======
-            raise NotImplementedError()
+            if self.reg > 0:
+                dp += self.reg * p
+
+            if p not in self.velocities:
+                self.velocities[p] = torch.zeros_like(p)
+            
+            v = self.velocities[p]
+            
+            v = self.momentum * v - self.learn_rate * dp
+            
+            self.velocities[p] = v
+            
+            p += v
             # ========================
 
 
