@@ -96,7 +96,7 @@ class ArgMaxClassifier(Classifier):
         #  Classify each sample to one of C classes based on the highest score.
         #  Output should be a (N,) integer tensor.
         # ====== YOUR CODE: ======
-        raise NotImplementedError()
+        return y_proba.argmax(dim=1) #dim1 = class, dim0 = batch
         # ========================
 
 

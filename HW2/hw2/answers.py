@@ -373,36 +373,58 @@ def part4_optim_hp():
     #    What you returns needs to be a callable, so either an instance of one of the
     #    Loss classes in torch.nn or one of the loss functions from torch.nn.functional.
     # ====== YOUR CODE: ======
-    raise NotImplementedError()
+    loss_fn = torch.nn.CrossEntropyLoss()
+    lr = 0.01
+    weight_decay = 0.0001
+    momentum = 0.9
     # ========================
     return dict(lr=lr, weight_decay=weight_decay, momentum=momentum, loss_fn=loss_fn)
 
 
 part4_q1 = r"""
-**Your answer:**
+**1. Number of parameters**
 
+Let's calculate the parameters (weights) for each case, assuming bias is ignored (standard for ResNet with BatchNorm) and the bottleneck reduces dimensionality by a factor of 4 (256 -> 64).
 
-Write your answer using **markdown** and $\LaTeX$:
-```python
-# A code block
-a = 2
-```
-An equation: $e^{i\pi} -1 = 0$
+* **Regular Block:** Two $3 \times 3$ convolutions with 256 input and output channels.
+    $$ 2 \times (3 \cdot 3 \cdot 256 \cdot 256) = 2 \times 589,824 = \mathbf{1,179,648} $$
 
+* **Bottleneck Block:** Three convolutions: $1\times 1$ (256 to 64), $3 \times 3$ (64 to 64), and $1 \times 1$ (64 to 256).
+    1.  Projection (reduce): $1 \cdot 1 \cdot 256 \cdot 64 = 16,384$
+    2.  Processing: $3 \cdot 3 \cdot 64 \cdot 64 = 36,864$
+    3.  Expansion (restore): $1 \cdot 1 \cdot 64 \cdot 256 = 16,384$
+    $$ 16,384 + 36,864 + 16,384 = \mathbf{69,632} $$
+
+The bottleneck block has significantly fewer parameters (approx. 17x fewer).
+
+**2. Number of floating point operations (FLOPs)**
+
+**Qualitative Assessment:** The number of FLOPs is generally proportional to the number of parameters multiplied by the spatial resolution of the feature map ($H \times W$). Since both blocks operate on the same spatial resolution, the large reduction in parameters in the Bottleneck block leads to a proportional, massive reduction in FLOPs. This makes the bottleneck much more computationally efficient.
+
+**3. Ability to combine input**
+
+1.  **Spatially (within feature maps):** The **Regular Block** has better spatial combination ability because it applies two $3\times3$ filters sequentially, effectively increasing the receptive field more than the Bottleneck block, which only has a single $3\times3$ convolution in the middle (the $1\times1$ layers do not look at neighboring pixels).
+2.  **Across feature maps:** The **Bottleneck Block** is specifically designed to manipulate cross-channel information efficiently. The $1\times1$ layers perform linear combinations of the input channels to compress and then expand the depth. While the Regular block also combines features across maps (as every standard convolution does), the Bottleneck decouples this operation, allowing for complex cross-channel mixing with much less computation.
 """
 
 
 part4_q2 = r"""
-**Your answer:**
+**1. Derivation for $y_1$**
 
+Given $y_1 = M \cdot x_1$, the derivative with respect to $x_1$ using the chain rule is:
+$$ \frac{\partial L}{\partial x_1} = \left(\frac{\partial y_1}{\partial x_1}\right)^T \frac{\partial L}{\partial y_1} = \mathbf{M^T \frac{\partial L}{\partial y_1}} $$
 
-Write your answer using **markdown** and $\LaTeX$:
-```python
-# A code block
-a = 2
-```
-An equation: $e^{i\pi} -1 = 0$
+**2. Derivation for $y_2$**
 
+Given $y_2 = x_2 + M \cdot x_2 = (I + M)x_2$:
+$$ \frac{\partial L}{\partial x_2} = \left(\frac{\partial y_2}{\partial x_2}\right)^T \frac{\partial L}{\partial y_2} = (I + M)^T \frac{\partial L}{\partial y_2} = (I + M^T) \frac{\partial L}{\partial y_2} $$
+$$ = \mathbf{\frac{\partial L}{\partial y_2} + M^T \frac{\partial L}{\partial y_2}} $$
+
+**3. Explanation of Vanishing Gradients**
+
+In deep networks, the gradient at an early layer is the product of the Jacobians of all subsequent layers (Chain Rule).
+* In the standard case ($y_1$), if we have many layers where weights are small ($|M_{i,j}| < 1$), the backpropagated gradient involves a product of many matrices $M^T$. This product tends to decay exponentially toward zero, causing the **vanishing gradient** problem.
+* In the residual case ($y_2$), the gradient signal is multiplied by $(I + M^T)$. Even if $M$ has small entries, the term $(I + M^T)$ is close to the Identity matrix. This allows the gradient $\frac{\partial L}{\partial y_2}$ to flow backwards through the "skip connection" (the $+ \frac{\partial L}{\partial y_2}$ term) without being diminished, effectively creating a "gradient superhighway" that enables training of very deep networks.
 """
 
 # ==============
