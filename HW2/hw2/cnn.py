@@ -387,3 +387,15 @@ class ResNet(CNN):
         seq = nn.Sequential(*layers)
         return seq
 
+class YourCNN(ResNet):
+    """
+    we built it like that because we can rely on resnet architechture.
+    but we tune the hyper-parameters that we know that work well
+    """
+    def __init__(self, *args, **kwargs):
+        kwargs["batchnorm"] = True
+        kwargs["dropout"] = 0.2 # pervent overfiting
+        kwargs["bottleneck"] = False
+        if "pooling_params" not in kwargs:
+            kwargs["pooling_params"] = {'kernel_size': 2}
+        super().__init__(*args, **kwargs)

@@ -11,7 +11,8 @@ from torchvision.datasets import CIFAR10
 
 from cs236781.train_results import FitResult
 
-from .cnn import CNN, ResNet
+
+from .cnn import CNN, ResNet, YourCNN
 from .mlp import MLP
 from .training import ClassifierTrainer
 from .classifier import ArgMaxClassifier, BinaryClassifier, select_roc_thresh
@@ -22,6 +23,7 @@ MODEL_TYPES = {
     ###
     "cnn": CNN,
     "resnet": ResNet,
+    "ycnn": YourCNN
 }
 
 
@@ -161,7 +163,55 @@ def cnn_experiment(
     #   for you automatically.
     fit_res = None
     # ====== YOUR CODE: ======
-    raise NotImplementedError()
+    from .training import ClassifierTrainer
+
+    dl_train = torch.utils.data.DataLoader(ds_train, batch_size=bs_train, shuffle=True)
+    dl_test = torch.utils.data.DataLoader(ds_test, batch_size=bs_test, shuffle=False)
+    channels = []
+    for k in filters_per_layer:
+        channels.extend([k] * layers_per_block)
+
+    model_kwargs = dict(
+        in_size=ds_train[0][0].shape,
+        out_classes=10,
+        channels=channels,
+        pool_every=pool_every,
+        hidden_dims=hidden_dims,
+        **kw
+    )
+
+    if 'pooling_params' not in model_kwargs:
+        model_kwargs['pooling_params'] = dict(kernel_size=2)
+    if model_type == "cnn":
+        model_kwargs.update(
+            conv_params=dict(kernel_size=3, stride=1, padding=1)
+        )
+
+    model = model_cls(**model_kwargs).to(device)
+
+    loss_fn = torch.nn.CrossEntropyLoss()
+    optimizer = torch.optim.Adam(
+        model.parameters(),
+        lr=lr,
+        weight_decay=reg
+    )
+    model.classify_scores = lambda scores: torch.argmax(scores, dim=1)
+    trainer = ClassifierTrainer(
+        model=model,
+        loss_fn=loss_fn,
+        optimizer=optimizer,
+        device=device
+    )
+
+    fit_res = trainer.fit(
+        dl_train=dl_train,
+        dl_test=dl_test,
+        num_epochs=epochs,
+        early_stopping=early_stopping,
+        checkpoints=checkpoints,
+        max_batches=batches,
+        **kw
+    )
     # ========================
 
     save_experiment(run_name, out_dir, cfg, fit_res)

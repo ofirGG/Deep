@@ -434,57 +434,48 @@ In deep networks, the gradient at an early layer is the product of the Jacobians
 
 
 part5_q1 = r"""
-**Your answer:**
+**1. Effect of depth on accuracy:**
+We can see that "deeper" is definitely not always better. The accuracy actually drops significantly as we add layers. The best results were obtained with $L=4$ (reaching around 70% accuracy). Deeper networks like $L=8$ and $L=16$ failed completely. This happens because deeper networks are much harder to optimize; the gradient has to travel through many more layers during backpropagation, making the signal weaker and unstable.
 
+**2. Untrainable depths:**
+Yes, for $L=8$ and $L=16$ the network was effectively not trainable at all, staying stuck at ~10% accuracy (which is just random guessing for 10 classes).
+This is caused by the **vanishing gradient problem**. The gradients become vanishingly small as they propagate back through the deep layers, so the weights in the early layers effectively never get updated.
 
-Write your answer using **markdown** and $\LaTeX$:
-```python
-# A code block
-a = 2
-```
-An equation: $e^{i\pi} -1 = 0$
-
+Two ways to resolve this:
+1. **Residual Connections (ResNet):** Adding skip connections allows the gradient to flow directly through the network, preventing them from vanishing.
+2. **Batch Normalization:** Normalizing the layer inputs ensures that activations and gradients remain in a stable range, which makes training deep networks much more stable.
 """
 
 part5_q2 = r"""
-**Your answer:**
+**1. Comparison to Experiment 1.1:**
+The general trend regarding depth remains consistent with Experiment 1.1: shallow networks ($L=2, 4$) train well, while the deeper network ($L=8$) completely fails to train (stuck at ~10% accuracy) due to the vanishing gradient problem.
 
-
-Write your answer using **markdown** and $\LaTeX$:
-```python
-# A code block
-a = 2
-```
-An equation: $e^{i\pi} -1 = 0$
-
+**2. Effect of Width ($K$):**
+* **For shallow depths ($L=2, 4$):** Increasing the width ($K$) leads to better accuracy. We observe that $K=128$ consistently outperforms $K=32$. This is expected because usually, wider networks have a larger capacity to represent complex functions, assuming they can be trained.
+* **For deep depths ($L=8$):** Increasing the width had **no effect**. The network remained untrainable even with $K=128$. This demonstrates that the vanishing gradient problem is a structural issue related to depth; simply adding more parameters (width) cannot resolve the fact that the gradient signal is lost before reaching the early layers.
 """
 
 part5_q3 = r"""
-**Your answer:**
+**1. Results Analysis:**
+The experiment shows a limit to trainability. The shallowest network, $L=2$, trained successfully, reaching approximately 70% accuracy. However, increasing the depth slightly to $L=3$ and $L=4$ caused the model to completely fail, remaining at random guess accuracy (~10%).
 
-
-Write your answer using **markdown** and $\LaTeX$:
-```python
-# A code block
-a = 2
-```
-An equation: $e^{i\pi} -1 = 0$
-
+**2. Impact of Pyramid Architecture:**
+This failure at $L=3$ is notable because in Experiment 1.1, a fixed-width network of depth $L=4$ was easily trainable. This indicates that the "pyramid" structure (doubling filters $64 \to 128 \to 256$) introduces additional instability. Rapidly changing the number of channels between layers alters the signal variance significantly. Without Batch Normalization to compensate for these statistical shifts, the gradients vanish or explode much faster than in a fixed-width architecture, making even moderately shallow networks ($L=3$) impossible to train.
 """
 
 part5_q4 = r"""
-**Your answer:**
+**1. Effect of Residual Connections:**
+The results show that adding residual connections fixes the training problems we saw earlier. Unlike the plain CNNs, the ResNet models were able to train successfully even at deeper layers.
 
+**2. Comparison to Experiment 1.1 (Fixed Width):**
+In Exp 1.1, the network completely failed for depths $L=8$ and $L=16$ (stuck at 10% accuracy). Here, with the exact same configuration ($K=32$) but using ResNet, those depths trained well and reached high accuracy (~60-70%). Even the very deep $L=32$ network managed to learn something, which was impossible with the plain CNN.
 
-Write your answer using **markdown** and $\LaTeX$:
-```python
-# A code block
-a = 2
-```
-An equation: $e^{i\pi} -1 = 0$
+**3. Comparison to Experiment 1.3 (Pyramid):**
+In Exp 1.3, the "pyramid" structure ($K=64 \to 128 \to 256$) was unstable and failed even at shallow depths like $L=3$. With ResNet, this instability is gone—the model trained successfully for $L=4$ and $L=8$ with the same pyramid structure.
 
+**Conclusion:**
+The skip connections act as highways for the gradients, allowing them to propagate back to the early layers without vanishing. This solves the optimization issues that caused the plain CNNs to fail in the previous experiments.
 """
-
 
 # ==============
 
