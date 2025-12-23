@@ -477,6 +477,9 @@ In Exp 1.3, the "pyramid" structure ($K=64 \to 128 \to 256$) was unstable and fa
 The skip connections act as highways for the gradients, allowing them to propagate back to the early layers without vanishing. This solves the optimization issues that caused the plain CNNs to fail in the previous experiments.
 """
 
+part5_q5 = r"""
+"""
+
 # ==============
 
 # ==============
