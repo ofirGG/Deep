@@ -64,9 +64,9 @@ If we view this as a block matrix mapping vectorized weights to vectorized outpu
 part1_q2 = r"""
 **Your answer:**
 
-**Yes, the second-order derivative can be very helpful.**
+**Yes, the second-order derivative can be helpful.**
 
-While standard gradient descent relies only on the first derivative (gradient) to determine the *direction* of the step, the second derivative (Hessian matrix) provides information about the **curvature** of the loss landscape.
+While standard gradient descent relies only on the first derivative (gradient) to determine the *direction* of the step, the second derivative, the Hessian matrix, provides information about the curvature of the loss.
 
 **Scenario where it is useful: Ill-conditioned Landscapes (Ravines)**
 
@@ -141,12 +141,12 @@ part2_q1 = r"""
 **Yes, the graphs match the expected behavior of dropout regularization.**
 
 * **No-dropout (`dropout=0` - Blue line):**
-    * **Behavior:** This model exhibits classic **overfitting**. It achieves very high training accuracy (>80%) and very low training loss, indicating it has memorized the training data.
-    * **Evidence:** In the `test_loss` graph, the blue line starts low but then **increases dramatically** as training progresses. This divergence between the decreasing training loss and increasing test loss is the hallmark of overfitting—the model is becoming less generalizable as it continues to train.
+    * **Behavior:** This model exhibits overfitting. It achieves very high training accuracy (>80%) and very low training loss, indicating it has memorized the training data.
+    * **Evidence:** In the `test_loss` graph, the blue line starts low but then increases dramatically as training progresses. This divergence between the decreasing training loss and increasing test loss points to overfitting. The model is becoming less generalizable as it continues to train.
 
 * **With Dropout (`dropout=0.4` - Orange line):**
-    * **Behavior:** The dropout acts as a regularizer, making it harder for the model to memorize the training data.
-    * **Evidence:** The training accuracy is significantly lower (~45%) compared to the no-dropout model, but the **test loss is stable** and does not explode like the blue line. Crucially, the `test_acc` (bottom right) for the orange line eventually surpasses the blue line (reaching ~28% vs ~25%), showing that the model generalizes better to unseen data despite performing "worse" on the training set.
+    * **Behavior:** The dropout Makes it harder for the model to memorize the training data.
+    * **Evidence:** The training accuracy is significantly lower (~45%) compared to the no-dropout model, but the **test loss is stable** and does not explode like the blue line. Crucially, the `test_acc` (bottom right) for the orange line eventually surpasses the blue line, showing that the model generalizes better to unseen data despite performing worse on the training set.
 
 **2. Low-dropout (0.4) vs. High-dropout (0.8)**
 
@@ -163,13 +163,13 @@ part2_q2 = r"""
 **Yes, it is possible.**
 
 It is possible for the test loss to decrease while test accuracy decreases because they measure different things:
-* **Accuracy** is a **discrete** metric: It only cares about which class has the highest score. It does not matter if the correct class wins by 0.01 or by 0.99.
-* **Cross-Entropy Loss** is a **continuous** metric: It cares about the **confidence** (probability) assigned to the correct class.
+* **Accuracy** only cares about which class has the highest score. It does not matter if the correct class wins by 0.01 or by 0.99.
+* **Cross-Entropy Loss** cares about the confidence (probability) assigned to the correct class.
 
 **How it happens:**
 Imagine a scenario where the model is evaluated on a test set:
-1.  **Improving Confidence on Easy Samples:** For the majority of samples that the model is *already* classifying correctly, the model becomes much more confident (e.g., the probability of the correct class rises from 0.6 to 0.99). This causes a **massive drop** in the total cross-entropy loss.
-2.  **failing Borderline Samples:** Simultaneously, a few "borderline" samples that were previously barely correct (e.g., probability 0.51) shift slightly to become barely incorrect (e.g., probability 0.49). This causes the **accuracy to drop**.
+1.  **Improving Confidence on Easy Samples:** For the majority of samples that the model is already classifying correctly, the model becomes much more confident (e.g., the probability of the correct class rises from 0.6 to 0.99). This causes a big drop in the total cross-entropy loss.
+2.  **failing borderline samples:** Simultaneously, a few borderline samples that were previously barely correct (e.g., probability 0.51) shift slightly to become barely incorrect (e.g., probability 0.49). This causes the accuracy to drop.
 
 In this case, the significant reduction in loss from step #1 outweighs the small increase in loss from step #2, resulting in a **lower average loss** even though the **count of correct predictions (accuracy)** has gone down.
 """
@@ -206,11 +206,11 @@ $$ \nabla \left( \sum_{i=1}^N L_i(\theta) \right) = \sum_{i=1}^N \nabla L_i(\the
 Therefore, accumulating the gradients (or losses) from disjoint batches and stepping once is mathematically identical to calculating the gradient over the whole dataset at once.
 
 **3.2. Out of Memory Error**
-The error occurred because you tried to do **one backward pass on the sum of the losses**.
-Most deep learning frameworks (like PyTorch) build a **computational graph** to track operations for backpropagation. By feeding batch after batch and summing the losses *without* detaching or backwarding, the framework keeps extending this massive graph in memory, storing all intermediate activations for *all* batches to eventually compute gradients. This effectively reconstructs the memory footprint of the full dataset, defeating the purpose of splitting it.
+The error occurred because we tried to do **one backward pass on the sum of the losses**.
+To track the backpropagation, we use a **computational graph**. By feeding batch after batch and summing the losses without detaching or backwarding, the framework keeps extending this graph in memory, storing all intermediate activations for **all** batches to eventually compute gradients. This effectively reconstructs the memory footprint of the full dataset, defeating the purpose of splitting it.
 
 **3.3. Solution**
-Instead of summing the *losses* and doing one backward pass, you should **accumulate the gradients**.
+Instead of summing the *losses* and doing one backward pass, we should **accumulate the gradients**.
 1.  For each batch, run the forward pass and calculate loss.
 2.  Run `loss.backward()` immediately. This computes gradients and frees the graph for that batch.
 3.  Accumulate these gradients in the parameter `.grad` attributes (PyTorch does this by default if you don't call `zero_grad()`).
@@ -286,7 +286,7 @@ part3_q1 = r"""
 * **Approximation Error:**
     This is the difference between the best possible model in our hypothesis class, $h^*$, and the optimal model theoretically possible (Bayes optimal), $h_{bayes}$:
     $$ \epsilon_{app} = L(h^*) - L(h_{bayes}) $$
-    It measures the limitations of the model architecture itself (i.e., **underfitting** due to a lack of capacity).
+    It measures the limitations of the model architecture itself (i.e., underfitting due to a lack of capacity).
 
 ---
 
@@ -295,7 +295,7 @@ part3_q1 = r"""
 Based on the loss and accuracy plots provided (specifically the second set of graphs with unstable test metrics):
 
 1.  **Optimization Error: Low**
-    * **Observation:** The training loss (blue line in `test_loss`) decreases smoothly and consistently, stabilizing at a relatively low value (~0.15). The training accuracy reaches a high value (~94%).
+    * **Observation:** The training loss (blue line in `test_loss`) decreases smoothly and consistently, stabilizing at a relatively low value (about 0.15). The training accuracy reaches a high value (about 94%).
     * **Conclusion:** The optimizer successfully minimized the objective function on the training set. There is no sign of getting stuck at a high loss value.
 
 2.  **Generalization Error: High**
@@ -484,18 +484,24 @@ The skip connections act as highways for the gradients, allowing them to propaga
 
 
 part6_q1 = r"""
-**Your answer:**
+**1. Inference Analysis:**
+* **Image 1 (Dolphins):** **Failure.** The model failed to identify the dolphins. Instead, it detected a "person" (0.90 confidence) and a "surfboard" (0.37).
+* **Image 2 (Pets):** **Partial/Noisy Detection.** The model struggled with the overlapping animals. It misclassified the black dog as a "cat", and for the white dog, it outputted two conflicting boxes (one "dog", one "cat") on the same object.
 
+**2. Reasons for Failure and Fixes:**
+* **Unsupported Class (Dolphins):** The model maybe failed because Dolphin might **not be included in its training classes**. A neural network cannot predict a class it has no output neuron for. Instead, it matched the input features to the closest shapes it does know: a "surfboard" (smooth, in water) or a "person" (jumping action).
+    * *Fix:* **Fine-Tuning.** We must retrain the final classification layer on a new dataset that explicitly contains the "Dolphin" class.
+* **Occlusion/Overlap (Pets):** The dogs and cat are physically touching and overlapping. This causes two issues:
+    1.  **Feature Mixing:** The convolutional features for the animals blend together, confusing the classifier (hence calling a dog a "cat").
+    2.  **NMS Failure:** The Non-Maximum Suppression algorithm failed to remove the duplicate box on the white dog because the model gave them different labels (Cat vs Dog), so it treated them as two valid objects.
+    * *Fix:* **Augmentation.** Retrain using "MixUp" or "Mosaic" augmentations (overlapping images) to force the model to handle occlusion better.
 
-Write your answer using **markdown** and $\LaTeX$:
-```python
-# A code block
-a = 2
-```
-An equation: $e^{i\pi} -1 = 0$
-
+**3. Adversarial Attack on Object Detection:**
+We can use a PGD attack, which is similar to what we learned for classification but with a different target.
+* **Goal:** Instead of minimizing loss to *improve* accuracy, we want to **maximize** the loss to *destroy* detection.
+* **Method:** We take the input image $x$ and add small noise. We perform **Gradient Ascent** on the "Objectness" score (the probability that a box contains an object).
+* **Result:** By maximizing the loss of the objectness score, we force the model's confidence below the detection threshold. The bounding box will disappear, and the object will become "invisible" to the detector. Alternatively, we could attack the classification loss to force the model to misclassify the object (e.g., make a person look like a surfboard).
 """
-
 
 part6_q2 = r"""
 **Your answer:**
@@ -512,27 +518,28 @@ An equation: $e^{i\pi} -1 = 0$
 
 
 part6_q3 = r"""
-**Your answer:**
+**1. Camouflage (Moth): Failure.**
+* **Result:** No objects were detected.
+* **Analysis:** The moth's texture matches the wood grain background. YOLO relies heavily on **edge detection** and **contrast** to propose regions of interest. Since the camouflage effectively removes the boundary between the object and the background, the model treats the moth as part of the tree bark.
 
+**2. Occlusion (Cat in Grass): Failure.**
+* **Result:** No objects were detected.
+* **Analysis:** The tall grass breaks the cat's body into disjointed fragments. Convolutional Neural Networks look for specific **spatial hierarchies of features** (e.g., ears near eyes near a nose). When these features are visually separated, as they are hidden by grass, the model cannot combine them into a single valid "Cat" instance, dropping the confidence score below the detection threshold.
 
-Write your answer using **markdown** and $\LaTeX$:
-```python
-# A code block
-a = 2
-```
-An equation: $e^{i\pi} -1 = 0$
-
+**3. Motion Blur (Speeding Car): Misclassification.**
+* **Result:** The main speeding car was misclassified as a **"boat" (0.42)**. However, the model correctly detected the tiny car in the distance as a **"car" (0.47)**.
+* **Analysis:** This highlights the model's dependency on sharp, high-frequency features. The motion blur smoothed out defining characteristics of the main car like **wheels and door handles**, leaving a smooth, elongated shape that the model interpreted as a boat hull. The distant car was detected because it was less blurred, preserving the sharp edges required for identification despite its small size.
 """
 
 part6_bonus = r"""
-**Your answer:**
+We attempted to improve detection using standard image processing techniques, but observed an interesting failure case:
 
+1. **Sharpening (Motion Blur):** We used the detailEnhance function. Which boosts high-frequency details (like the wheels) that was smoothed out by the motion blur. we thought this would allow the model to recover the "Car" classification.
+**Result** In reality, the model, which is sensitive to texture, likely got confused by the noise, preventing it from recognizing the underlying car geometry. **performance degraded**.
 
-Write your answer using **markdown** and $\LaTeX$:
-```python
-# A code block
-a = 2
-```
-An equation: $e^{i\pi} -1 = 0$
-
+2. **Contrast (Moth):** We tried to boost contrast between the moth's wings and the wood, which we thought would make the object's boundaries distinct enough for the detector to propose a bounding box.
+**Result:** While visually clearer to humans, the extreme contrast adjustment likely destroyed the subtle texture difference the model uses to identify biological forms, resulting in **no detection**.
+ 
+3. **Occlusion (Cat):** We applied both **contrast enhancement and sharpening** to try and make the visible features (eyes, ears) to be noticed out from the grass.
+**Result** No detection again, similar to both of the earlier attempts.
 """
