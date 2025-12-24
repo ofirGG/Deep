@@ -30,24 +30,26 @@ def sliding_window_attention(q, k, v, window_size, padding_mask=None):
     
     half_w = window_size // 2
     ones = torch.ones(seq_len, seq_len, device=q.device, dtype=torch.uint8)
+    
     mask_outside = torch.triu(ones, diagonal=half_w + 1) | torch.tril(ones, diagonal=-(half_w + 1))
     scores.masked_fill_(mask_outside.bool(), float('-inf'))
     
-
     if padding_mask is not None:
         target_shape = list(padding_mask.shape)
+        
         while len(target_shape) < len(scores.shape):
             target_shape.insert(1, 1)
+            
         reshaped_mask = padding_mask.view(*target_shape)
         
         scores.masked_fill_(reshaped_mask == 0, float('-inf'))
 
     attention = torch.softmax(scores, dim=-1)
     
-    if padding_mask is not None:
-         attention = torch.nan_to_num(attention, nan=0.0)
+    attention = torch.nan_to_num(attention, nan=0.0)
 
     values = torch.matmul(attention, v)
+
     # ======================
 
     return values, attention
@@ -90,6 +92,9 @@ class MultiHeadAttention(nn.Module):
         # Determine value outputs
         # call the sliding window attention function you implemented
         # ====== YOUR CODE: ======
+        q = q.reshape(batch_size, seq_length, self.num_heads, self.head_dim).permute(0, 2, 1, 3)
+        k = k.reshape(batch_size, seq_length, self.num_heads, self.head_dim).permute(0, 2, 1, 3)
+        v = v.reshape(batch_size, seq_length, self.num_heads, self.head_dim).permute(0, 2, 1, 3)
         values, attention = sliding_window_attention(
             q, k, v, 
             self.window_size, 
