@@ -39,17 +39,18 @@ def sliding_window_attention(q, k, v, window_size, padding_mask=None):
         
         while len(target_shape) < len(scores.shape):
             target_shape.insert(1, 1)
-            
-        reshaped_mask = padding_mask.view(*target_shape)
-        
-        scores.masked_fill_(reshaped_mask == 0, float('-inf'))
-
+                    
+        key_mask = padding_mask.unsqueeze(1).unsqueeze(2) 
+        scores.masked_fill_(key_mask == 0, float('-inf'))
     attention = torch.softmax(scores, dim=-1)
     
     attention = torch.nan_to_num(attention, nan=0.0)
 
     values = torch.matmul(attention, v)
 
+    if padding_mask is not None:
+        query_mask = padding_mask.unsqueeze(1).unsqueeze(-1) 
+        values = values * query_mask
     # ======================
 
     return values, attention
@@ -92,9 +93,6 @@ class MultiHeadAttention(nn.Module):
         # Determine value outputs
         # call the sliding window attention function you implemented
         # ====== YOUR CODE: ======
-        q = q.reshape(batch_size, seq_length, self.num_heads, self.head_dim).permute(0, 2, 1, 3)
-        k = k.reshape(batch_size, seq_length, self.num_heads, self.head_dim).permute(0, 2, 1, 3)
-        v = v.reshape(batch_size, seq_length, self.num_heads, self.head_dim).permute(0, 2, 1, 3)
         values, attention = sliding_window_attention(
             q, k, v, 
             self.window_size, 
@@ -222,18 +220,23 @@ class Encoder(nn.Module):
         output = None
 
         # ====== YOUR CODE: ======
+        
         x = self.encoder_embedding(sentence)
         x = self.positional_encoding(x)
-        
         x = self.dropout(x)
         
+        # 2. Pass through Encoder Layers
         for layer in self.encoder_layers:
             x = layer(x, padding_mask)
             
-        cls_token_representation = x[:, 0, :]
+        # 3. Pooling Strategy (The Fix)
+        # Instead of averaging (Mean Pooling), we take the representation 
+        # of the first token (index 0). This is the standard input for 
+        # the Tanh-based "Pooler" defined in classification_mlp.
+        pooled_output = x[:, 0, :]
         
-        output = self.classification_mlp(cls_token_representation)
-        
+        # 4. Classification Head
+        output = self.classification_mlp(pooled_output)
         output = output.squeeze(-1)
         # ========================
         
