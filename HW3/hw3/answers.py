@@ -110,25 +110,72 @@ def part2_vae_hyperparams():
     )
     # TODO: Tweak the hyperparameters to generate a former president.
     # ====== YOUR CODE: ======
-    pass
+    hypers['batch_size'] = 32
+    hypers['h_dim'] = 128
+    hypers['z_dim'] = 128
+    hypers['x_sigma2'] = 0.9
+    hypers['learn_rate'] = 2e-4
+    hypers['betas'] = (0.5, 0.999)
     # ========================
     return hypers
 
 
 part2_q1 = r"""
 **Your answer:**
+
+The hyperparameter $\sigma^2$ represents the assumed variance of the data likelihood $p(\mathbf{x}|\mathbf{z}) \sim \mathcal{N}(\Psi(\mathbf{z}), \sigma^2 \mathbf{I})$. In the loss function, it acts as a weighting coefficient that controls the trade-off between the reconstruction loss and the KL-divergence regularization.
+
+1.  **Low $\sigma^2$:**
+    Effect: The reconstruction error term is scaled up (large weight). The model prioritizes minimizing pixel-wise differences between the input and output.
+    Result: The model produces sharp, high-quality reconstructions. However, it may ignore the KL-divergence term, leading to a latent space that is not smooth or normally distributed (overfitting). This results in poor random sampling (generation) quality.
+
+2.  **High $\sigma^2$:**
+    Effect: The reconstruction error term is scaled down (small weight). The KL-divergence term becomes relatively more important.
+    Result: The model prioritizes fitting the latent distribution to the prior $\mathcal{N}(0, I)$. The latent space becomes very regularized and smooth. However, the model may fail to encode enough information about the input, leading to blurry reconstructions and generic features (a phenomenon known as "posterior collapse").
 """
 
 part2_q2 = r"""
 **Your answer:**
+
+1.  **Purpose of the Loss Terms:**
+    Reconstruction Loss: This term measures how well the decoded image matches the original input. Its purpose is to force the latent representation ($z$) to capture the meaningful "content" and information required to reproduce the data. Without this, the model would produce random noise.
+    KL Divergence Loss: This term measures the difference (divergence) between the predicted latent distribution $q(\mathbf{z}|\mathbf{x})$ and a fixed standard normal prior $p(\mathbf{z}) = \mathcal{N}(0, I)$. Its purpose is to regularize the latent space structure.
+
+2.  **Effect on Latent-Space Distribution:**
+    The KL loss forces the encoder to map inputs to a compact, continuous, and overlapping region centered around the origin. It prevents the encoder from memorizing data points as isolated, far-apart "dots" (delta functions) or cheating by setting the variance to zero. Instead, it forces every input to be mapped to a probability cloud that resembles a standard Gaussian.
+
+3.  **Benefit of this Effect:**
+    This regularization is crucial for the VAE's generative capability:
+    Sampling: Because we forced the training distribution to look like a standard normal distribution, we know exactly how to generate new data: simply sample $z \sim \mathcal{N}(0, I)$ and decode it.
+    Smoothness (Interpolation): The compact space ensures that there are no "gaps" or "holes" in the latent space. Walking from one point to another in the latent space results in a smooth semantic transition in the image space, rather than sudden jumps or garbage outputs.
 """
 
 part2_q3 = r"""
 **Your answer:**
+
+We start by maximizing the evidence distribution $p(\mathbf{X})$ because Maximum Likelihood Estimation (MLE) is the fundamental objective of generative modeling.
+
+1.  **The Goal:** Our goal is to train a model that learns the true underlying probability distribution of the data, $p_{data}(\mathbf{x})$. If our model assigns a high probability $p_\theta(\mathbf{x})$ to the real samples we observed, it means the model has successfully learned to recognize and generate data that looks like the training set.
+
+2.  **The Problem:** Direct maximization of $p(\mathbf{x})$ is intractable. In a latent variable model, calculating the likelihood of a single image requires marginalizing over all possible latent variables $z$:
+    $$p(\mathbf{x}) = \int p(\mathbf{x}|\mathbf{z})p(\mathbf{z}) d\mathbf{z}$$
+    This integral is impossible to compute for complex neural networks.
+
+3.  **The Solution (ELBO):** Since we cannot maximize $\log p(\mathbf{x})$ directly, we derive the Evidence Lower Bound (ELBO). By maximizing the ELBO, we implicitly maximize the log-likelihood of the data (or at least push its lower bound up), effectively training the model to satisfy the MLE objective.
 """
 
 part2_q4 = r"""
 **Your answer:**
+
+We model the log-variance ($\log \sigma^2$) instead of the variance directly for two main reasons: numerical stability and mathematical constraints.
+
+1.  **Range Constraint (Positivity):** Variance ($\sigma^2$) is mathematically required to be a non-negative number ($[0, \infty)$). Standard neural network layers (like Linear layers) produce outputs in the range $(-\infty, \infty)$.
+    If we predicted $\sigma^2$ directly, we would need to enforce positivity using an activation function like ReLU or Softplus. ReLU could lead to "dead neurons" (variance = 0), causing infinite densities and numerical crashes.
+    By predicting $x = \log \sigma^2$, we can allow the network to output any real number. We then compute $\sigma^2 = e^x$, which is guaranteed to be strictly positive.
+
+2.  **Numerical Stability & Sensitivity:**
+    It effectively allows the network to learn the scale of the variance.
+    Small changes in the log-space correspond to multiplicative changes in the variance space. This makes it easier for the optimizer to fine-tune very small variances (which map to negative numbers like -5, -10) without dealing with tiny floating-point numbers directly during backpropagation.
 """
 
 

@@ -26,7 +26,28 @@ def sliding_window_attention(q, k, v, window_size, padding_mask=None):
     values, attention = None, None
 
     # ====== YOUR CODE: ======
-    pass
+    scores = torch.matmul(q, k.transpose(-2, -1)) / math.sqrt(embed_dim)
+    
+    half_w = window_size // 2
+    ones = torch.ones(seq_len, seq_len, device=q.device, dtype=torch.uint8)
+    mask_outside = torch.triu(ones, diagonal=half_w + 1) | torch.tril(ones, diagonal=-(half_w + 1))
+    scores.masked_fill_(mask_outside.bool(), float('-inf'))
+    
+
+    if padding_mask is not None:
+        target_shape = list(padding_mask.shape)
+        while len(target_shape) < len(scores.shape):
+            target_shape.insert(1, 1)
+        reshaped_mask = padding_mask.view(*target_shape)
+        
+        scores.masked_fill_(reshaped_mask == 0, float('-inf'))
+
+    attention = torch.softmax(scores, dim=-1)
+    
+    if padding_mask is not None:
+         attention = torch.nan_to_num(attention, nan=0.0)
+
+    values = torch.matmul(attention, v)
     # ======================
 
     return values, attention
@@ -69,7 +90,11 @@ class MultiHeadAttention(nn.Module):
         # Determine value outputs
         # call the sliding window attention function you implemented
         # ====== YOUR CODE: ======
-        pass
+        values, attention = sliding_window_attention(
+            q, k, v, 
+            self.window_size, 
+            padding_mask
+        )
         # ========================
 
         values = values.permute(0, 2, 1, 3) # [Batch, SeqLen, Head, Dims]
@@ -146,7 +171,11 @@ class EncoderLayer(nn.Module):
         '''
 
         # ====== YOUR CODE: ======
-        pass
+        attn_out = self.self_attn(x, padding_mask)
+        x = self.norm1(x + self.dropout(attn_out))
+        
+        ff_out = self.feed_forward(x)
+        x = self.norm2(x + self.dropout(ff_out))
         # ========================
         
         return x
@@ -188,7 +217,19 @@ class Encoder(nn.Module):
         output = None
 
         # ====== YOUR CODE: ======
-        pass
+        x = self.encoder_embedding(sentence)
+        x = self.positional_encoding(x)
+        
+        x = self.dropout(x)
+        
+        for layer in self.encoder_layers:
+            x = layer(x, padding_mask)
+            
+        cls_token_representation = x[:, 0, :]
+        
+        output = self.classification_mlp(cls_token_representation)
+        
+        output = output.squeeze(-1)
         # ========================
         
         

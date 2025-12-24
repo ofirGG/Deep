@@ -95,11 +95,11 @@ class Trainer(abc.ABC):
             #    simple regularization technique that is highly recommended.
             # ====== YOUR CODE: ======
             train_result = self.train_epoch(dl_train, verbose=verbose)
-            train_loss.append(np.mean(train_result.losses))
+            train_loss.append(torch.tensor(train_result.losses).mean().item())
             train_acc.append(train_result.accuracy)
             
             test_result = self.test_epoch(dl_test, verbose=verbose)
-            test_loss.append(np.mean(test_result.losses))
+            test_loss.append(torch.tensor(test_result.losses).mean().item())
             test_acc.append(test_result.accuracy)
             
             if best_acc is None or test_result.accuracy > best_acc:
@@ -318,8 +318,8 @@ class VAETrainer(Trainer):
         # ====== YOUR CODE: ======
         self.optimizer.zero_grad()
         
-        x_rec, mu, log_sigma2 = self.model(x)
-        loss, data_loss, _ = vae_loss(x, x_rec, mu, log_sigma2, self.loss_fn)
+        xr, z_mu, z_log_sigma2 = self.model(x)
+        loss, data_loss, _ = self.loss_fn(x, xr, z_mu, z_log_sigma2)
         
         loss.backward()
         self.optimizer.step()
@@ -334,8 +334,8 @@ class VAETrainer(Trainer):
         with torch.no_grad():
             # TODO: Evaluate a VAE on one batch.
             # ====== YOUR CODE: ======
-            x_rec, mu, log_sigma2 = self.model(x)
-            loss, data_loss, _ = vae_loss(x, x_rec, mu, log_sigma2, self.loss_fn)
+            xr, z_mu, z_log_sigma2 = self.model(x)
+            loss, data_loss, _ = self.loss_fn(x, xr, z_mu, z_log_sigma2)
             # ========================
 
         return BatchResult(loss.item(), 1 / data_loss.item())
