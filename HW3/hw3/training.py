@@ -94,7 +94,27 @@ class Trainer(abc.ABC):
             #  - Implement early stopping. This is a very useful and
             #    simple regularization technique that is highly recommended.
             # ====== YOUR CODE: ======
-            pass
+            train_result = self.train_epoch(dl_train, verbose=verbose)
+            train_loss.append(np.mean(train_result.losses))
+            train_acc.append(train_result.accuracy)
+            
+            test_result = self.test_epoch(dl_test, verbose=verbose)
+            test_loss.append(np.mean(test_result.losses))
+            test_acc.append(test_result.accuracy)
+            
+            if best_acc is None or test_result.accuracy > best_acc:
+                best_acc = test_result.accuracy
+                save_checkpoint = True
+            
+            current_loss = test_loss[-1]
+            if len(test_loss) > 1 and current_loss >= min(test_loss[:-1]):
+                epochs_without_improvement += 1
+            else:
+                epochs_without_improvement = 0
+                
+            if early_stopping is not None and epochs_without_improvement >= early_stopping:
+                self._print(f"Early stopping after {epoch + 1} epochs.", verbose)
+                break
             # ========================
 
             # Save model checkpoint if requested
@@ -222,14 +242,14 @@ class RNNTrainer(Trainer):
     def train_epoch(self, dl_train: DataLoader, **kw):
         # TODO: Implement modifications to the base method, if needed.
         # ====== YOUR CODE: ======
-        pass
+        self.hidden_state = None
         # ========================
         return super().train_epoch(dl_train, **kw)
 
     def test_epoch(self, dl_test: DataLoader, **kw):
         # TODO: Implement modifications to the base method, if needed.
         # ====== YOUR CODE: ======
-        pass
+        self.hidden_state = None
         # ========================
         return super().test_epoch(dl_test, **kw)
 
@@ -247,7 +267,19 @@ class RNNTrainer(Trainer):
         #  - Update params
         #  - Calculate number of correct char predictions
         # ====== YOUR CODE: ======
-        pass
+        self.optimizer.zero_grad()
+        
+        y_pred, self.hidden_state = self.model(x, self.hidden_state)
+        
+        self.hidden_state = self.hidden_state.detach()
+        
+        loss = self.loss_fn(y_pred.transpose(1, 2), y)
+        
+        loss.backward()
+        self.optimizer.step()
+        
+        pred_indices = torch.argmax(y_pred, dim=2)
+        num_correct = (pred_indices == y).sum()
         # ========================
 
         # Note: scaling num_correct by seq_len because each sample has seq_len
@@ -267,7 +299,12 @@ class RNNTrainer(Trainer):
             #  - Loss calculation
             #  - Calculate number of correct predictions
             # ====== YOUR CODE: ======
-            pass
+            y_pred, self.hidden_state = self.model(x, self.hidden_state)
+            
+            loss = self.loss_fn(y_pred.transpose(1, 2), y)
+            
+            pred_indices = torch.argmax(y_pred, dim=2)
+            num_correct = (pred_indices == y).sum()
             # ========================
 
         return BatchResult(loss.item(), num_correct.item() / seq_len)
@@ -279,7 +316,13 @@ class VAETrainer(Trainer):
         x = x.to(self.device)  # Image batch (N,C,H,W)
         # TODO: Train a VAE on one batch.
         # ====== YOUR CODE: ======
-        pass
+        self.optimizer.zero_grad()
+        
+        x_rec, mu, log_sigma2 = self.model(x)
+        loss, data_loss, _ = vae_loss(x, x_rec, mu, log_sigma2, self.loss_fn)
+        
+        loss.backward()
+        self.optimizer.step()
         # ========================
 
         return BatchResult(loss.item(), 1 / data_loss.item())
@@ -291,7 +334,8 @@ class VAETrainer(Trainer):
         with torch.no_grad():
             # TODO: Evaluate a VAE on one batch.
             # ====== YOUR CODE: ======
-            pass
+            x_rec, mu, log_sigma2 = self.model(x)
+            loss, data_loss, _ = vae_loss(x, x_rec, mu, log_sigma2, self.loss_fn)
             # ========================
 
         return BatchResult(loss.item(), 1 / data_loss.item())
@@ -336,7 +380,11 @@ class TransformerEncoderTrainer(Trainer):
             # TODO:
             #  fill out the testing loop.
             # ====== YOUR CODE: ======
-            pass
+            pred = self.model(input_ids, attention_mask).to(self.device)
+            loss = self.loss_fn(pred.squeeze(-1), label)
+            
+            y_t = torch.round(torch.sigmoid(pred)).float()
+            num_correct = (y_t.squeeze(-1) == label).sum()
             # ========================
 
 
@@ -354,7 +402,20 @@ class FineTuningTrainer(Trainer):
         # TODO:
         #  fill out the training loop.
         # ====== YOUR CODE: ======
-        pass
+        self.optimizer.zero_grad()
+        
+        logits = self.model(input_ids, attention_mask=attention_masks)
+        
+        if hasattr(logits, 'logits'):
+            logits = logits.logits
+            
+        loss = self.loss_fn(logits, labels)
+        
+        loss.backward()
+        self.optimizer.step()
+
+        preds = torch.argmax(logits, dim=1)
+        num_correct = (preds == labels).sum().item()
         # ========================
         return BatchResult(loss.item(), num_correct)
 
@@ -367,6 +428,14 @@ class FineTuningTrainer(Trainer):
             # TODO:
             #  fill out the testing loop.
             # ====== YOUR CODE: ======
-            pass
+            logits = self.model(input_ids, attention_mask=attention_masks)
+            
+            if hasattr(logits, 'logits'):
+                logits = logits.logits
+
+            loss = self.loss_fn(logits, labels)
+            
+            preds = torch.argmax(logits, dim=1)
+            num_correct = (preds == labels).sum().item()
             # ========================
         return BatchResult(loss.item(), num_correct)

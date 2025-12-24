@@ -33,5 +33,5 @@ dependencies:
   - cudatoolkit=11.3
   - torchtext
 
-platforms:
-  - linux-64
+
+
