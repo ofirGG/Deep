@@ -95,23 +95,24 @@ class Trainer(abc.ABC):
             #    simple regularization technique that is highly recommended.
             # ====== YOUR CODE: ======
             train_result = self.train_epoch(dl_train, verbose=verbose)
-            train_loss.append(torch.tensor(train_result.losses).mean().item())
+            train_loss.append(sum(train_result.losses) / len(train_result.losses))
             train_acc.append(train_result.accuracy)
-            
+
             test_result = self.test_epoch(dl_test, verbose=verbose)
-            test_loss.append(torch.tensor(test_result.losses).mean().item())
+            test_loss.append(sum(test_result.losses) / len(test_result.losses))
             test_acc.append(test_result.accuracy)
-            
+
+            actual_num_epochs += 1
+
             if best_acc is None or test_result.accuracy > best_acc:
                 best_acc = test_result.accuracy
                 save_checkpoint = True
-            
-            current_loss = test_loss[-1]
-            if len(test_loss) > 1 and current_loss >= min(test_loss[:-1]):
+
+            if len(test_loss) > 1 and test_loss[-1] >= min(test_loss[:-1]):
                 epochs_without_improvement += 1
             else:
                 epochs_without_improvement = 0
-                
+
             if early_stopping is not None and epochs_without_improvement >= early_stopping:
                 self._print(f"Early stopping after {epoch + 1} epochs.", verbose)
                 break
@@ -267,17 +268,16 @@ class RNNTrainer(Trainer):
         #  - Update params
         #  - Calculate number of correct char predictions
         # ====== YOUR CODE: ======
-        self.optimizer.zero_grad()
-        
+        self.optimizer.zero_grad(set_to_none=True)
+
         y_pred, self.hidden_state = self.model(x, self.hidden_state)
-        
         self.hidden_state = self.hidden_state.detach()
-        
+
         loss = self.loss_fn(y_pred.transpose(1, 2), y)
-        
+
         loss.backward()
         self.optimizer.step()
-        
+
         pred_indices = torch.argmax(y_pred, dim=2)
         num_correct = (pred_indices == y).sum()
         # ========================
@@ -316,11 +316,11 @@ class VAETrainer(Trainer):
         x = x.to(self.device)  # Image batch (N,C,H,W)
         # TODO: Train a VAE on one batch.
         # ====== YOUR CODE: ======
-        self.optimizer.zero_grad()
-        
+        self.optimizer.zero_grad(set_to_none=True)
+
         xr, z_mu, z_log_sigma2 = self.model(x)
         loss, data_loss, _ = self.loss_fn(x, xr, z_mu, z_log_sigma2)
-        
+
         loss.backward()
         self.optimizer.step()
         # ========================
@@ -344,14 +344,13 @@ class VAETrainer(Trainer):
 class TransformerEncoderTrainer(Trainer):
 
     def train_batch(self, batch) -> BatchResult:
-
         input_ids = batch['input_ids'].to(self.device)
         attention_mask = batch['attention_mask'].float().to(self.device)
         label = batch['label'].float().to(self.device)
 
         loss = None
         num_correct = None
-        self.optimizer.zero_grad()
+        self.optimizer.zero_grad(set_to_none=True)
 
         # loss
         pred = self.model(input_ids, attention_mask).to(self.device)
@@ -363,8 +362,6 @@ class TransformerEncoderTrainer(Trainer):
         # compute number of correct predictions
         y_t = torch.round(torch.sigmoid(pred)).float()
         num_correct = (y_t.squeeze(-1) == label).sum()
-
-
 
         return BatchResult(loss.item(), num_correct.item())
 
@@ -402,15 +399,15 @@ class FineTuningTrainer(Trainer):
         # TODO:
         #  fill out the training loop.
         # ====== YOUR CODE: ======
-        self.optimizer.zero_grad()
-        
+        self.optimizer.zero_grad(set_to_none=True)
+
         logits = self.model(input_ids, attention_mask=attention_masks)
-        
+
         if hasattr(logits, 'logits'):
             logits = logits.logits
-            
+
         loss = self.loss_fn(logits, labels)
-        
+
         loss.backward()
         self.optimizer.step()
 

@@ -192,17 +192,53 @@ def part3_transformer_encoder_hyperparams():
 
     # TODO: Tweak the hyperparameters to train the transformer encoder.
     # ====== YOUR CODE: ======
-    pass
+    hypers = dict(
+        embed_dim=64,
+        num_heads=4,
+        num_layers=2,
+        hidden_dim=128,
+        window_size=16,
+        droupout=0.1,
+        lr=0.0001,
+    )
     # ========================
     return hypers
 
 
 part3_q1 = r"""
 **Your answer:**
+
+Stacking encoder layers with sliding-window attention increases the **receptive field** of each token, similar to how stacking layers in a Convolutional Neural Network (CNN) increases the area of the input image that a deep filter can "see."
+
+1. **Local View in Initial Layers:** In the first layer, each token can only attend to its immediate neighbors within the fixed window size $w$. For a query at position $i$, the context is limited to $[i - w/2, i + w/2]$.
+
+2. **Context Propagation through Depth:** In the second layer, each token's representation already contains information aggregated from its own window in the first layer. Therefore, when a query at position $i$ attends to a neighbor at position $i + w/2$, it is implicitly receiving information that the neighbor gathered from *its* neighbors further down the sequence (up to $i + w$).
+
+3. **Linear Receptive Field Growth:** With each additional layer $l$, the effective context window (receptive field) expands. For a transformer with $L$ layers and a window size $w$, the top-layer representation of a token can "see" a total context of approximately $L \times w$ tokens.
+
+4. **Global Reach with Fewer Parameters:** This mechanism allows the model to build a global understanding of the text by propagating information across layers, even though each individual attention operation remains computationally efficient at $O(n \times w)$ instead of $O(n^2)$.
 """
 
 part3_q2 = r"""
 **Your answer:**
+
+**Proposed Variation: Dilated Sliding Window Attention**
+
+Instead of attending to the $w$ immediate neighbors ($i \pm 1, i \pm 2, \dots$), we attend to neighbors with a "gap" (dilation) of size $d$. For example, with $d=2$, a token at position $i$ attends to indices $i \pm 2, i \pm 4, \dots$.
+
+1.  **Computational Complexity:**
+    The complexity remains **$O(n \cdot w)$**.
+    Even though the attention window spans a larger distance in the text, the *number* of attention scores computed per token is still fixed at $w$. We simply skip over the tokens in the gaps.
+
+2.  **Global Information Sharing:**
+    Global information is shared much faster because the receptive field expands more rapidly.
+    * In standard sliding window, the receptive field grows linearly ($L \times w$).
+    * In dilated attention, the receptive field is $L \times w \times d$.
+    If we increase the dilation rate exponentially with each layer (e.g., Layer 1 has $d=1$, Layer 2 has $d=2$, Layer 3 has $d=4$), the receptive field grows exponentially. This allows the model to "see" the entire sequence with very few layers (logarithmic depth).
+
+3.  **Limitations:**
+    * **The "Gap" Problem:** By skipping tokens, the model loses detailed local information. A token might attend to a word 10 positions away but miss the word immediately next to it.
+    * **Solution:** This is typically mitigated by using a "Hybrid" approach: some heads (or layers) use standard sliding window (for local details) while others use dilated window (for global context).
 """
 
 # ==============

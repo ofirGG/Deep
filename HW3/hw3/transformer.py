@@ -2,10 +2,6 @@ import torch
 import torch.nn as nn
 import math
 
-
-# Yuval
-
-
 def sliding_window_attention(q, k, v, window_size, padding_mask=None):
     '''
     Computes the simple sliding window attention from 'Longformer: The Long-Document Transformer'.
@@ -89,17 +85,14 @@ class MultiHeadAttention(nn.Module):
         qkv = qkv.permute(0, 2, 1, 3) # [Batch, Head, SeqLen, 3*Dims]
         
         q, k, v = qkv.chunk(3, dim=-1) #[Batch, Head, SeqLen, Dims]
-        
-        # Determine value outputs
-        # call the sliding window attention function you implemented
+
         # ====== YOUR CODE: ======
         values, attention = sliding_window_attention(
-            q, k, v, 
-            self.window_size, 
+            q, k, v,
+            self.window_size,
             padding_mask
         )
         # ========================
-
         values = values.permute(0, 2, 1, 3) # [Batch, SeqLen, Head, Dims]
         values = values.reshape(batch_size, seq_length, embed_dim) #concatination of all heads
         o = self.o_proj(values)
@@ -182,9 +175,9 @@ class EncoderLayer(nn.Module):
         # ========================
         
         return x
-    
-    
-    
+
+
+
 class Encoder(nn.Module):
     def __init__(self, vocab_size, embed_dim, num_heads, num_layers, hidden_dim, max_seq_length, window_size, dropout=0.1):
         '''
@@ -218,39 +211,26 @@ class Encoder(nn.Module):
         :return: the logits  [Batch]
         '''
         output = None
-
         # ====== YOUR CODE: ======
-        
         x = self.encoder_embedding(sentence)
         x = self.positional_encoding(x)
         x = self.dropout(x)
-        
-        # 2. Pass through Encoder Layers
         for layer in self.encoder_layers:
             x = layer(x, padding_mask)
-            
-        # 3. Pooling Strategy (The Fix)
-        # Instead of averaging (Mean Pooling), we take the representation 
-        # of the first token (index 0). This is the standard input for 
-        # the Tanh-based "Pooler" defined in classification_mlp.
-        pooled_output = x[:, 0, :]
-        
-        # 4. Classification Head
-        output = self.classification_mlp(pooled_output)
-        output = output.squeeze(-1)
+        output = self.classification_mlp(x)[:, 0, 0].unsqueeze(-1)
         # ========================
-        
-        
-        return output  
-    
+
+
+        return output
+
     def predict(self, sentence, padding_mask):
         '''
         :param sententence #[Batch, max_seq_len]
         :param padding mask #[Batch, max_seq_len]
         :return: the binary predictions  [Batch]
         '''
+        padding_mask = padding_mask.float()
+
         logits = self.forward(sentence, padding_mask)
         preds = torch.round(torch.sigmoid(logits))
         return preds
-
-    
