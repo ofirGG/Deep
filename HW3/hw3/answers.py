@@ -4,7 +4,17 @@ Use this module to write your answers to the questions in the notebook.
 Note: Inside the answer strings you can use Markdown format and also LaTeX
 math (delimited with $$).
 """
+import torch.optim.lr_scheduler
+_old_init = torch.optim.lr_scheduler.ReduceLROnPlateau.__init__
 
+def _compatible_init(self, *args, **kwargs):
+    # If the notebook sends the deprecated 'verbose' arg, we just drop it.
+    if 'verbose' in kwargs:
+        kwargs.pop('verbose')
+    _old_init(self, *args, **kwargs)
+
+# Apply the fix
+torch.optim.lr_scheduler.ReduceLROnPlateau.__init__ = _compatible_init
 # ==============
 # Part 1 answers
 
@@ -33,17 +43,15 @@ def part1_rnn_hyperparams():
     # ========================
     return hypers
 
-
 def part1_generation_params():
     start_seq = ""
     temperature = 0.0001
-    # TODO: Tweak the parameters to generate a literary masterpiece.
-    # ====== YOUR CODE: ======
+    # TODO : Tweak the parameters to generate a literary masterpiece
+    # ===== YOUR CODE: =====
     start_seq = "ACT I."
     temperature = 0.8
     # ========================
     return start_seq, temperature
-
 
 part1_q1 = r"""
 **Your answer:**
@@ -193,13 +201,13 @@ def part3_transformer_encoder_hyperparams():
     # TODO: Tweak the hyperparameters to train the transformer encoder.
     # ====== YOUR CODE: ======
     hypers = dict(
-        embed_dim=64,
+        embed_dim=128,
         num_heads=4,
         num_layers=2,
         hidden_dim=128,
-        window_size=16,
-        droupout=0.1,
-        lr=0.0001,
+        window_size=128,
+        droupout=0.0,
+        lr=0.001,
     )
     # ========================
     return hypers
