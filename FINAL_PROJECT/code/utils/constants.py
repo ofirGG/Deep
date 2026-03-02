@@ -1,14 +1,4 @@
 
-############### DC ###############
-
-LIST_OF_MODELS_DC = ['EleutherAI/pythia-6.9b',
-                     'EleutherAI/pythia-12b',
-                     'huggyllama/llama-13b',
-                     'huggyllama/llama-30b', 
-                     'state-spaces/mamba-1.4b-hf']
-
-LIST_OF_DATASETS_DC = ['WikiMIA_32', 'WikiMIA_64', 'BookMIA_128']
-
 ############### HD ###############
 
 LIST_OF_MODELS_HD = ['mistralai/Mistral-7B-Instruct-v0.2', 'meta-llama/Meta-Llama-3-8B-Instruct', 'Qwen/Qwen2.5-7B-Instruct']
@@ -41,5 +31,5 @@ PROBE_MODELS = [
 
 MAXIMAL_VOCAB_SIZE = 1_000_000
 
-LIST_OF_ALL_DATASETS = LIST_OF_DATASETS_DC + LIST_OF_DATASETS_HD
-LIST_OF_ALL_MODELS = LIST_OF_MODELS_DC + LIST_OF_MODELS_HD
+LIST_OF_ALL_DATASETS = LIST_OF_DATASETS_HD
+LIST_OF_ALL_MODELS = LIST_OF_MODELS_HD

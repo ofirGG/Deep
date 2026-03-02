@@ -1,52 +1,5 @@
 import argparse
-from utils.constants import LIST_OF_MODELS_DC, LIST_OF_DATASETS_DC, PROBE_MODELS, MAXIMAL_VOCAB_SIZE, LIST_OF_DATASETS_HD, LIST_OF_MODELS_HD, LIST_OF_ALL_MODELS, LIST_OF_ALL_DATASETS
-
-
-def parse_args_DC():
-    """
-    Parse command-line arguments for the script.
-    
-    Returns:
-    --------
-    argparse.Namespace:
-        Parsed command-line arguments with dataset, model, and split details.
-    """
-    parser = argparse.ArgumentParser(description="Generate model LOS and labels from a specified dataset.")
-    
-    # Argument for selecting the model
-    parser.add_argument(
-        "--LLM",
-        choices=LIST_OF_MODELS_DC,
-        default="huggyllama/llama-13b",
-        help="Pretrained model to use for generating LOS."
-    )
-    
-    # Argument for selecting the dataset
-    parser.add_argument(
-        "--dataset",
-        choices=LIST_OF_DATASETS_DC,
-        default='BookMIA_128',
-        help="Dataset to be processed."
-    )
-    
-    
-    parser.add_argument(
-        "--take_top_k",
-        type=int,
-        default=MAXIMAL_VOCAB_SIZE,
-        help="Top-K to use when extracting the raw dataset -- should be max over all vocab sizes (default: 1_000_000)."
-    )
-    
-    parser.add_argument(
-        "--base_raw_data_dir",
-        type=str,
-        # default='./raw_data',
-        default='/home/guy_b/big-storage/raw_data',
-        help="Base directory for saving raw data."
-    )
-    
-    return parser.parse_args()
-
+from utils.constants import PROBE_MODELS, MAXIMAL_VOCAB_SIZE, LIST_OF_DATASETS_HD, LIST_OF_MODELS_HD, LIST_OF_ALL_MODELS, LIST_OF_ALL_DATASETS
 
 def parse_args_HD():
     """

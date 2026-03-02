@@ -5,7 +5,6 @@ from utils.args import parse_args_main
 import os
 from pathlib import Path
 from utils.dataset_preprocess import *
-from utils.constants import LIST_OF_DATASETS_DC
 from transformers import set_seed
 from torch.utils.data import Subset
 from torch.utils.data import DataLoader
@@ -24,7 +23,7 @@ def get_train_test_datasets(args, logger):
     
     logger.info(f"Starting data preparation for model '{args.LLM}' using training dataset '{args.train_dataset}'.")
     
-    if args.train_dataset in LIST_OF_DATASETS_DC and ('BookMIA' not in args.train_dataset):
+    if 'BookMIA' not in args.train_dataset:
 
         dataset_train = CustomSavedDataset(
             preprocessed_dir=train_data_preprocessed_dir,
@@ -103,7 +102,7 @@ def get_train_test_datasets(args, logger):
     return dataset_train, dataset_test
 
 def get_train_test_val_subsets(args, train_indices, val_indices, test_indices, fold, train_dataset, test_dataset):
-    if args.train_dataset in LIST_OF_DATASETS_DC and ('BookMIA' not in args.train_dataset):
+    if 'BookMIA' not in args.train_dataset:
         train_data = Subset(train_dataset, train_indices[fold])
         val_data = Subset(train_dataset, val_indices[fold])
         test_data = Subset(train_dataset, test_indices[fold])
@@ -265,7 +264,7 @@ def main():
 
 
 
-    if args.train_dataset in LIST_OF_DATASETS_DC and ('BookMIA' not in args.train_dataset):
+    if 'BookMIA' not in args.train_dataset:
         logger.info(f"for {args.train_dataset} splitting to {args.num_folds} folds")
         logger.info(f"Train size: {len(train_indices[0])}, Validation size: {len(val_indices[0])}, Test size: {len(test_indices[0])}")
     else:

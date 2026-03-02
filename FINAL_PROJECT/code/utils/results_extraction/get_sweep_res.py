@@ -6,8 +6,6 @@ import os
 import sys
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from constants import LIST_OF_MODELS_DC
-
 def fetch_and_process_wandb_data(project='probing_revisited-src',                   sweep_id='dmetxpy4', 
                         chosen_dataset = 'hotpotqa',
                         chosen_type = 'LOS',
