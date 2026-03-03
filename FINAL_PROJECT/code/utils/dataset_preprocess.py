@@ -202,20 +202,38 @@ def process_file(params):
             return ATP_R
             
 
-        def normalize_sorted_probs(raw_probs: torch.Tensor) -> torch.Tensor:
+        def normalize_sorted_probs(raw_probs: torch.Tensor, top_p: float = 0.95) -> torch.Tensor:
             """
             Normalizes the sorted raw probabilities excluding the last two columns.
-            
-            Args:
-                raw_probs (torch.Tensor): Input tensor with shape (batch_size, num_classes).
-                
-            Returns:
-                torch.Tensor: Normalized sorted probabilities.
+            Applies Dynamic K (Nucleus) masking to zero-out the long tail of probabilities.
             """
+            # 1. Sort the probabilities/logits in descending order
             sorted_raw_probs = torch.sort(raw_probs[:, :-2], descending=True)[0]
-            mu = torch.mean(sorted_raw_probs, dim=-1, keepdim=True)
-            std = torch.std(sorted_raw_probs, dim=-1, keepdim=True)
+            
+            # 2. Convert to probabilities to compute cumulative mass safely 
+            # (Softmax ensures a valid distribution even if raw_probs are logits)
+            probs = torch.softmax(sorted_raw_probs, dim=-1)
+            
+            # 3. Compute cumulative sum and create the dynamic K mask
+            cumsum_probs = torch.cumsum(probs, dim=-1)
+            mask = cumsum_probs <= top_p
+            
+            # Shift mask right to ensure we include the token that crosses the threshold
+            mask[:, 1:] = mask[:, :-1].clone()
+            mask[:, 0] = True # Always keep at least the top-1 token
+            
+            # 4. Compute mu and std ONLY over the valid dynamic K tokens to remove noise
+            valid_counts = mask.sum(dim=-1, keepdim=True).clamp(min=1)
+            mu = (sorted_raw_probs * mask).sum(dim=-1, keepdim=True) / valid_counts
+            
+            variance = (((sorted_raw_probs - mu) ** 2) * mask).sum(dim=-1, keepdim=True) / valid_counts
+            std = torch.sqrt(variance + 1e-8)
+            
+            # 5. Normalize
             sorted_raw_probs_normalized = (sorted_raw_probs - mu) / std
+            
+            # 6. Apply mask: Zero out all tokens beyond the dynamic K threshold
+            sorted_raw_probs_normalized[~mask] = 0.0
             
             return sorted_raw_probs_normalized, mu, std
         
