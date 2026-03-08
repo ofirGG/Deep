@@ -36,7 +36,7 @@ class ATP_R_MLP(nn.Module):
         
         self.param_for_normalized_ATP = nn.Parameter(torch.randn(1, 1, self.hidden_dim))
         
-        # New Feature
+        # Feature Engineering Parameters
         self.param_for_margin = nn.Parameter(torch.randn(1, 1, self.hidden_dim))
         self.param_for_entropy = nn.Parameter(torch.randn(1, 1, self.hidden_dim))
 
@@ -72,7 +72,7 @@ class ATP_R_MLP(nn.Module):
         return normalized_ATP * encoded_ATP_R.unsqueeze(-1) * self.param_for_ATP_R
 
     def forward(self, sorted_TDS_normalized, normalized_ATP, ATP_R):
-        # Calculate Margin and Local Entropy
+        # Feature Engineering: Calculate Margin and Local Entropy
         margin = sorted_TDS_normalized[:, :, 0:1] - normalized_ATP
         probs = F.softmax(sorted_TDS_normalized, dim=-1)
         entropy = -(probs * torch.log(probs + 1e-9)).sum(dim=-1, keepdim=True)
@@ -91,6 +91,7 @@ class ATP_R_MLP(nn.Module):
         # Encoding normalized mark
         encoded_normalized_ATP = normalized_ATP * self.param_for_normalized_ATP
         
+        # Combine all scalar embeddings
         x = encoded_ATP_R + encoded_normalized_ATP + encoded_margin + encoded_entropy
         x = x.flatten(start_dim=1)
         
@@ -101,7 +102,7 @@ class ATP_R_MLP(nn.Module):
                 x = F.relu(x)
                 x = F.dropout(x, p=self.dropout)
 
-        return self.sigmoid(x).squeeze(-1)  # Apply sigmoid for binary classification
+        return self.sigmoid(x).squeeze(-1)
 
 
 class ATP_R_Transf(nn.Module):
@@ -117,11 +118,13 @@ class ATP_R_Transf(nn.Module):
         self.dropout = args.dropout
         self.num_layers = args.num_layers
         self.pool = args.pool
-        assert self.pool in {'cls', 'mean'}, 'pool type must be either cls (cls token) or mean (mean pooling)'
+        
+        # Updated pool choices
+        assert self.pool in {'cls', 'mean', 'attention'}, "Pool type must be 'cls', 'mean', or 'attention'"
 
         self.param_for_normalized_ATP = nn.Parameter(torch.randn(1, 1, self.hidden_dim))
         
-        # New Feature
+        # Feature Engineering Parameters
         self.param_for_margin = nn.Parameter(torch.randn(1, 1, self.hidden_dim))
         self.param_for_entropy = nn.Parameter(torch.randn(1, 1, self.hidden_dim))
 
@@ -130,7 +133,6 @@ class ATP_R_Transf(nn.Module):
         elif self.args.rank_encoding == 'one_hot_encoding':
             self.one_hot_embedding = nn.Embedding(MODEL_VOCAB_SIZES[self.args.LLM],
             self.hidden_dim,
-            # sparse=True
             )
         else:
             raise ValueError("Invalid encoding type. Please choose either 'scale_encoding' or 'one_hot_encoding'.")
@@ -151,6 +153,14 @@ class ATP_R_Transf(nn.Module):
                 batch_first=True
             ) for _ in range(self.num_layers)
         ])
+        
+        # Attention Pooling Layer
+        if self.pool == 'attention':
+            self.attention_pool = nn.Sequential(
+                nn.Linear(self.hidden_dim, self.hidden_dim // 2),
+                nn.Tanh(),
+                nn.Linear(self.hidden_dim // 2, 1)
+            )
 
         # Classification head
         self.mlp_head = nn.Linear(self.hidden_dim, 1)
@@ -187,25 +197,31 @@ class ATP_R_Transf(nn.Module):
 
         # Add [CLS] token
         b, n, _ = x.shape
-        cls_tokens = repeat(self.cls_token, '1 1 d -> b 1 d', b=b)  # Shape: [B, 1, hidden_dim]
-        x = torch.cat((cls_tokens, x), dim=1)  # Shape: [B, N+1, hidden_dim]
+        cls_tokens = repeat(self.cls_token, '1 1 d -> b 1 d', b=b)
+        x = torch.cat((cls_tokens, x), dim=1)
 
         # Generate positional indices and add embeddings
-        pos_indices = torch.arange(n + 1, device=x.device).unsqueeze(0)  # Shape: [1, N+1]
-        pos_embeddings = self.pos_embedding(pos_indices)  # Shape: [1, N+1, hidden_dim]
+        pos_indices = torch.arange(n + 1, device=x.device).unsqueeze(0)
+        pos_embeddings = self.pos_embedding(pos_indices)
         x += pos_embeddings
 
         # Pass through Transformer layers
         for layer in self.attention_layers:
-            x = layer(x)  # Shape remains [B, N+1, hidden_dim]
+            x = layer(x)
 
-        # Pooling: Use the CLS token
-        x = x.mean(dim = 1) if self.pool == 'mean' else x[:, 0]
+        # Pooling logic
+        if self.pool == 'mean':
+            x = x.mean(dim=1)
+        elif self.pool == 'attention':
+            attn_weights = F.softmax(self.attention_pool(x), dim=1) # Shape: [B, N+1, 1]
+            x = (x * attn_weights).sum(dim=1) # Weighted sum over sequence
+        else: # 'cls'
+            x = x[:, 0]
 
         # Final classification head
-        x = self.mlp_head(x)  # Shape: [B, 1]
+        x = self.mlp_head(x)
         
-        return self.sigmoid(x).squeeze(-1)  # Apply sigmoid for binary classification
+        return self.sigmoid(x).squeeze(-1)
     
 
 class LOS_Net(nn.Module):
@@ -221,11 +237,12 @@ class LOS_Net(nn.Module):
         self.num_layers = args.num_layers
         self.pool = args.pool
         
-        assert self.pool in {'cls', 'mean'}, "Pool type must be either 'cls' (CLS token) or 'mean' (mean pooling)"
+        # Updated pool choices
+        assert self.pool in {'cls', 'mean', 'attention'}, "Pool type must be 'cls', 'mean', or 'attention'"
         
         self.param_for_normalized_ATP = nn.Parameter(torch.randn(1, 1, self.hidden_dim // 2))
 
-        # Feature Engineering: Half hidden_dim to match the concatenation scheme
+        # Feature Engineering Parameters
         self.param_for_margin = nn.Parameter(torch.randn(1, 1, self.hidden_dim // 2))
         self.param_for_entropy = nn.Parameter(torch.randn(1, 1, self.hidden_dim // 2))
 
@@ -234,7 +251,6 @@ class LOS_Net(nn.Module):
         elif self.args.rank_encoding == 'one_hot_encoding':
             self.one_hot_embedding = nn.Embedding(MODEL_VOCAB_SIZES[self.args.LLM],
             self.hidden_dim // 2,
-            # sparse=True
             )
         else:
             raise ValueError("Invalid encoding type. Please choose either 'scale_encoding' or 'one_hot_encoding'.")
@@ -259,6 +275,14 @@ class LOS_Net(nn.Module):
             ) for _ in range(self.num_layers)
         ])
         
+        # Attention Pooling Layer
+        if self.pool == 'attention':
+            self.attention_pool = nn.Sequential(
+                nn.Linear(self.hidden_dim, self.hidden_dim // 2),
+                nn.Tanh(),
+                nn.Linear(self.hidden_dim // 2, 1)
+            )
+        
         # Classification head
         self.mlp_head = nn.Linear(self.hidden_dim, 1)
         self.sigmoid = nn.Sigmoid()
@@ -271,7 +295,7 @@ class LOS_Net(nn.Module):
         return normalized_ATP * encoded_ATP_R.unsqueeze(-1) * self.param_for_ATP_R
     
     def forward(self, sorted_TDS_normalized, normalized_ATP, ATP_R):
-
+        # Feature Engineering: Calculate Margin and Local Entropy
         margin = sorted_TDS_normalized[:, :, 0:1] - normalized_ATP
         probs = F.softmax(sorted_TDS_normalized, dim=-1)
         entropy = -(probs * torch.log(probs + 1e-9)).sum(dim=-1, keepdim=True)
@@ -309,8 +333,14 @@ class LOS_Net(nn.Module):
         for layer in self.attention_layers:
             x = layer(x)
         
-        # Pooling
-        x = x.mean(dim=1) if self.pool == 'mean' else x[:, 0]
+        # Pooling logic
+        if self.pool == 'mean':
+            x = x.mean(dim=1)
+        elif self.pool == 'attention':
+            attn_weights = F.softmax(self.attention_pool(x), dim=1) # Shape: [B, N+1, 1]
+            x = (x * attn_weights).sum(dim=1) # Weighted sum over sequence
+        else: # 'cls'
+            x = x[:, 0]
         
         # Classification head
         x = self.mlp_head(x)
