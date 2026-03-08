@@ -5,6 +5,7 @@ from utils.constants import MODEL_VOCAB_SIZES
 from einops import repeat
 from vit_pytorch import ViT
 from utils.Architectures_utils import *
+
 def get_model(args, max_sequence_length, actual_sequence_length, input_dim, input_shape):
     model_mapping = {
         # LOS-based
@@ -34,6 +35,11 @@ class ATP_R_MLP(nn.Module):
         self.actual_sequence_length = actual_sequence_length
         
         self.param_for_normalized_ATP = nn.Parameter(torch.randn(1, 1, self.hidden_dim))
+        
+        # New Feature
+        self.param_for_margin = nn.Parameter(torch.randn(1, 1, self.hidden_dim))
+        self.param_for_entropy = nn.Parameter(torch.randn(1, 1, self.hidden_dim))
+
         if self.args.rank_encoding == 'scale_encoding':
             self.param_for_ATP_R = nn.Parameter(torch.randn(1, 1, self.hidden_dim))        
         elif self.args.rank_encoding == 'one_hot_encoding':
@@ -57,16 +63,22 @@ class ATP_R_MLP(nn.Module):
 
         # Output act
         self.sigmoid = nn.Sigmoid()
+
     def compute_encoded_ATP_R(self, normalized_ATP, ATP_R):
         """
         Computes encoded_ATP_R based on normalized_ATP and ATP_R.
         """
         encoded_ATP_R = 2 * (0.5 - (ATP_R / MODEL_VOCAB_SIZES[self.args.LLM]))
-        
         return normalized_ATP * encoded_ATP_R.unsqueeze(-1) * self.param_for_ATP_R
 
     def forward(self, sorted_TDS_normalized, normalized_ATP, ATP_R):
-
+        # Calculate Margin and Local Entropy
+        margin = sorted_TDS_normalized[:, :, 0:1] - normalized_ATP
+        probs = F.softmax(sorted_TDS_normalized, dim=-1)
+        entropy = -(probs * torch.log(probs + 1e-9)).sum(dim=-1, keepdim=True)
+        
+        encoded_margin = margin * self.param_for_margin
+        encoded_entropy = entropy * self.param_for_entropy
 
         # Encoding one-hot rank
         if self.args.rank_encoding == 'scale_encoding':
@@ -78,7 +90,8 @@ class ATP_R_MLP(nn.Module):
                     
         # Encoding normalized mark
         encoded_normalized_ATP = normalized_ATP * self.param_for_normalized_ATP
-        x = encoded_ATP_R + encoded_normalized_ATP
+        
+        x = encoded_ATP_R + encoded_normalized_ATP + encoded_margin + encoded_entropy
         x = x.flatten(start_dim=1)
         
         for i in range(self.num_layers):
@@ -87,7 +100,6 @@ class ATP_R_MLP(nn.Module):
                 x = self.batch_norms[i](x)
                 x = F.relu(x)
                 x = F.dropout(x, p=self.dropout)
-
 
         return self.sigmoid(x).squeeze(-1)  # Apply sigmoid for binary classification
 
@@ -108,6 +120,11 @@ class ATP_R_Transf(nn.Module):
         assert self.pool in {'cls', 'mean'}, 'pool type must be either cls (cls token) or mean (mean pooling)'
 
         self.param_for_normalized_ATP = nn.Parameter(torch.randn(1, 1, self.hidden_dim))
+        
+        # New Feature
+        self.param_for_margin = nn.Parameter(torch.randn(1, 1, self.hidden_dim))
+        self.param_for_entropy = nn.Parameter(torch.randn(1, 1, self.hidden_dim))
+
         if self.args.rank_encoding == 'scale_encoding':
             self.param_for_ATP_R = nn.Parameter(torch.randn(1, 1, self.hidden_dim))        
         elif self.args.rank_encoding == 'one_hot_encoding':
@@ -117,8 +134,6 @@ class ATP_R_Transf(nn.Module):
             )
         else:
             raise ValueError("Invalid encoding type. Please choose either 'scale_encoding' or 'one_hot_encoding'.")
-        
-        
 
         # CLS token
         self.cls_token = nn.Parameter(torch.randn(1, 1, self.hidden_dim))
@@ -146,10 +161,16 @@ class ATP_R_Transf(nn.Module):
         Computes encoded_ATP_R based on normalized_ATP and ATP_R.
         """
         encoded_ATP_R = 2 * (0.5 - (ATP_R / MODEL_VOCAB_SIZES[self.args.LLM]))
-        
         return normalized_ATP * encoded_ATP_R.unsqueeze(-1) * self.param_for_ATP_R
     
     def forward(self, sorted_TDS_normalized, normalized_ATP, ATP_R):
+        # Feature Engineering: Calculate Margin and Local Entropy
+        margin = sorted_TDS_normalized[:, :, 0:1] - normalized_ATP
+        probs = F.softmax(sorted_TDS_normalized, dim=-1)
+        entropy = -(probs * torch.log(probs + 1e-9)).sum(dim=-1, keepdim=True)
+        
+        encoded_margin = margin * self.param_for_margin
+        encoded_entropy = entropy * self.param_for_entropy
             
         # Encoding one-hot rank
         if self.args.rank_encoding == 'scale_encoding':
@@ -161,9 +182,9 @@ class ATP_R_Transf(nn.Module):
                     
         # Encoding normalized mark
         encoded_normalized_ATP = normalized_ATP * self.param_for_normalized_ATP
-        x = encoded_ATP_R + encoded_normalized_ATP
+        
+        x = encoded_ATP_R + encoded_normalized_ATP + encoded_margin + encoded_entropy
 
-    
         # Add [CLS] token
         b, n, _ = x.shape
         cls_tokens = repeat(self.cls_token, '1 1 d -> b 1 d', b=b)  # Shape: [B, 1, hidden_dim]
@@ -204,8 +225,10 @@ class LOS_Net(nn.Module):
         
         self.param_for_normalized_ATP = nn.Parameter(torch.randn(1, 1, self.hidden_dim // 2))
 
+        # Feature Engineering: Half hidden_dim to match the concatenation scheme
+        self.param_for_margin = nn.Parameter(torch.randn(1, 1, self.hidden_dim // 2))
+        self.param_for_entropy = nn.Parameter(torch.randn(1, 1, self.hidden_dim // 2))
 
-        self.param_for_normalized_ATP = nn.Parameter(torch.randn(1, 1, self.hidden_dim // 2))
         if self.args.rank_encoding == 'scale_encoding':
             self.param_for_ATP_R = nn.Parameter(torch.randn(1, 1, self.hidden_dim // 2))        
         elif self.args.rank_encoding == 'one_hot_encoding':
@@ -215,8 +238,6 @@ class LOS_Net(nn.Module):
             )
         else:
             raise ValueError("Invalid encoding type. Please choose either 'scale_encoding' or 'one_hot_encoding'.")
-        
-        
         
         # Input embedding layer
         self.input_proj = nn.Linear(input_dim, self.hidden_dim // 2)
@@ -250,18 +271,14 @@ class LOS_Net(nn.Module):
         return normalized_ATP * encoded_ATP_R.unsqueeze(-1) * self.param_for_ATP_R
     
     def forward(self, sorted_TDS_normalized, normalized_ATP, ATP_R):
-        """
-        Forward pass for LOS_Net.
 
-        Args:
-            sorted_TDS_normalized (torch.Tensor): Shape [B, N, V].
-            normalized_ATP (torch.Tensor): Shape [B, N, 1].
-            ATP_R (torch.Tensor): Shape [B, N].
-            sigmoid (bool): Whether to apply sigmoid activation. Default is True.
+        margin = sorted_TDS_normalized[:, :, 0:1] - normalized_ATP
+        probs = F.softmax(sorted_TDS_normalized, dim=-1)
+        entropy = -(probs * torch.log(probs + 1e-9)).sum(dim=-1, keepdim=True)
+        
+        encoded_margin = margin * self.param_for_margin
+        encoded_entropy = entropy * self.param_for_entropy
 
-        Returns:
-            torch.Tensor: Output tensor of shape [B, 1] (if sigmoid=True) or raw logits (if sigmoid=False).
-        """
         # Encoding one-hot rank
         if self.args.rank_encoding == 'scale_encoding':
             encoded_ATP_R = self.compute_encoded_ATP_R(normalized_ATP=normalized_ATP, ATP_R=ATP_R)
@@ -270,16 +287,14 @@ class LOS_Net(nn.Module):
         else:
             raise ValueError("Invalid encoding type. Please choose either 'scale_encoding' or 'one_hot_encoding'.")
             
-        
         # Encoding normalized mark
         encoded_normalized_ATP = normalized_ATP * self.param_for_normalized_ATP
-        
         
         # Encoding normalized vocab
         encoded_sorted_TDS_normalized = self.input_proj(sorted_TDS_normalized.to(torch.float32))
         
-        # Concatenating embeddings
-        x = torch.cat((encoded_sorted_TDS_normalized, encoded_ATP_R + encoded_normalized_ATP), dim=-1)
+        x_scalars = encoded_ATP_R + encoded_normalized_ATP + encoded_margin + encoded_entropy
+        x = torch.cat((encoded_sorted_TDS_normalized, x_scalars), dim=-1)
         
         # Adding CLS token
         b, n, _ = x.shape
@@ -300,5 +315,4 @@ class LOS_Net(nn.Module):
         # Classification head
         x = self.mlp_head(x)
         return self.sigmoid(x).squeeze(-1)
-   
 ######################## LOS ########################
