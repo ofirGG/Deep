@@ -72,13 +72,20 @@ class ATP_R_MLP(nn.Module):
         return normalized_ATP * encoded_ATP_R.unsqueeze(-1) * self.param_for_ATP_R
 
     def forward(self, sorted_TDS_normalized, normalized_ATP, ATP_R):
-        # Feature Engineering: Calculate Margin and Local Entropy
-        margin = sorted_TDS_normalized[:, :, 0:1] - normalized_ATP
-        probs = F.softmax(sorted_TDS_normalized, dim=-1)
-        entropy = -(probs * torch.log(probs + 1e-9)).sum(dim=-1, keepdim=True)
+        # Defensive check against NaNs from preprocessing
+        sorted_TDS_normalized = torch.nan_to_num(sorted_TDS_normalized, nan=0.0)
+        normalized_ATP = torch.nan_to_num(normalized_ATP, nan=0.0)
+
+        # Feature Engineering: Calculate Margin and Local Entropy safely in float32
+        tds_safe = sorted_TDS_normalized.to(torch.float32)
+        margin = tds_safe[:, :, 0:1] - normalized_ATP.to(torch.float32)
         
-        encoded_margin = margin * self.param_for_margin
-        encoded_entropy = entropy * self.param_for_entropy
+        probs = F.softmax(tds_safe, dim=-1)
+        safe_probs = torch.clamp(probs, min=1e-7) # Safe from float16 underflow
+        entropy = -(probs * torch.log(safe_probs)).sum(dim=-1, keepdim=True)
+        
+        encoded_margin = margin.to(sorted_TDS_normalized.dtype) * self.param_for_margin
+        encoded_entropy = entropy.to(sorted_TDS_normalized.dtype) * self.param_for_entropy
 
         # Encoding one-hot rank
         if self.args.rank_encoding == 'scale_encoding':
@@ -102,6 +109,7 @@ class ATP_R_MLP(nn.Module):
                 x = F.relu(x)
                 x = F.dropout(x, p=self.dropout)
 
+        x = torch.nan_to_num(x, nan=0.0) # Final safeguard
         return self.sigmoid(x).squeeze(-1)
 
 
@@ -174,14 +182,21 @@ class ATP_R_Transf(nn.Module):
         return normalized_ATP * encoded_ATP_R.unsqueeze(-1) * self.param_for_ATP_R
     
     def forward(self, sorted_TDS_normalized, normalized_ATP, ATP_R):
-        # Feature Engineering: Calculate Margin and Local Entropy
-        margin = sorted_TDS_normalized[:, :, 0:1] - normalized_ATP
-        probs = F.softmax(sorted_TDS_normalized, dim=-1)
-        entropy = -(probs * torch.log(probs + 1e-9)).sum(dim=-1, keepdim=True)
+        # Defensive check against NaNs
+        sorted_TDS_normalized = torch.nan_to_num(sorted_TDS_normalized, nan=0.0)
+        normalized_ATP = torch.nan_to_num(normalized_ATP, nan=0.0)
+
+        # Feature Engineering safely
+        tds_safe = sorted_TDS_normalized.to(torch.float32)
+        margin = tds_safe[:, :, 0:1] - normalized_ATP.to(torch.float32)
         
-        encoded_margin = margin * self.param_for_margin
-        encoded_entropy = entropy * self.param_for_entropy
-            
+        probs = F.softmax(tds_safe, dim=-1)
+        safe_probs = torch.clamp(probs, min=1e-7)
+        entropy = -(probs * torch.log(safe_probs)).sum(dim=-1, keepdim=True)
+        
+        encoded_margin = margin.to(sorted_TDS_normalized.dtype) * self.param_for_margin
+        encoded_entropy = entropy.to(sorted_TDS_normalized.dtype) * self.param_for_entropy
+
         # Encoding one-hot rank
         if self.args.rank_encoding == 'scale_encoding':
             encoded_ATP_R = self.compute_encoded_ATP_R(normalized_ATP=normalized_ATP, ATP_R=ATP_R)
@@ -295,13 +310,20 @@ class LOS_Net(nn.Module):
         return normalized_ATP * encoded_ATP_R.unsqueeze(-1) * self.param_for_ATP_R
     
     def forward(self, sorted_TDS_normalized, normalized_ATP, ATP_R):
-        # Feature Engineering: Calculate Margin and Local Entropy
-        margin = sorted_TDS_normalized[:, :, 0:1] - normalized_ATP
-        probs = F.softmax(sorted_TDS_normalized, dim=-1)
-        entropy = -(probs * torch.log(probs + 1e-9)).sum(dim=-1, keepdim=True)
+        # Defensive check against NaNs
+        sorted_TDS_normalized = torch.nan_to_num(sorted_TDS_normalized, nan=0.0)
+        normalized_ATP = torch.nan_to_num(normalized_ATP, nan=0.0)
+
+        # Feature Engineering safely
+        tds_safe = sorted_TDS_normalized.to(torch.float32)
+        margin = tds_safe[:, :, 0:1] - normalized_ATP.to(torch.float32)
         
-        encoded_margin = margin * self.param_for_margin
-        encoded_entropy = entropy * self.param_for_entropy
+        probs = F.softmax(tds_safe, dim=-1)
+        safe_probs = torch.clamp(probs, min=1e-7)
+        entropy = -(probs * torch.log(safe_probs)).sum(dim=-1, keepdim=True)
+        
+        encoded_margin = margin.to(sorted_TDS_normalized.dtype) * self.param_for_margin
+        encoded_entropy = entropy.to(sorted_TDS_normalized.dtype) * self.param_for_entropy
 
         # Encoding one-hot rank
         if self.args.rank_encoding == 'scale_encoding':
@@ -344,5 +366,6 @@ class LOS_Net(nn.Module):
         
         # Classification head
         x = self.mlp_head(x)
+        x = torch.nan_to_num(x, nan=0.0) # Final safeguard
         return self.sigmoid(x).squeeze(-1)
 ######################## LOS ########################
