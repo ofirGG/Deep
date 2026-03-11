@@ -53,8 +53,10 @@ class ATP_R_MLP(nn.Module):
 
         # --- Feature Fusion Layer (For 6 Features) ---
         self.feature_fusion = nn.Sequential(
+            nn.LayerNorm(self.hidden_dim * 6),  
             nn.Linear(self.hidden_dim * 6, self.hidden_dim * 3),
             nn.GELU(),
+            nn.Dropout(self.dropout),         
             nn.Linear(self.hidden_dim * 3, self.hidden_dim)
         )
 
@@ -159,10 +161,12 @@ class ATP_R_Transf(nn.Module):
         else:
             raise ValueError("Invalid encoding type.")
 
-        # --- Feature Fusion Layer ---
+        # --- Feature Fusion Layer (For 6 Features) ---
         self.feature_fusion = nn.Sequential(
+            nn.LayerNorm(self.hidden_dim * 6),
             nn.Linear(self.hidden_dim * 6, self.hidden_dim * 3),
             nn.GELU(),
+            nn.Dropout(self.dropout),      
             nn.Linear(self.hidden_dim * 3, self.hidden_dim)
         )
 
@@ -278,8 +282,10 @@ class LOS_Net(nn.Module):
             
         # --- Feature Fusion Layer (Dimensions adjusted for LOS_Net) ---
         self.feature_fusion = nn.Sequential(
+            nn.LayerNorm((self.hidden_dim // 2) * 6), 
             nn.Linear((self.hidden_dim // 2) * 6, self.hidden_dim),
             nn.GELU(),
+            nn.Dropout(self.dropout),                 
             nn.Linear(self.hidden_dim, self.hidden_dim // 2)
         )
         
