@@ -230,7 +230,7 @@ def process_file(params):
             # 4. Apply mask: Zero out the long tail
             sorted_raw_probs_normalized[~mask] = 0.0
             
-            return sorted_raw_probs_normalized
+            return sorted_raw_probs_normalized, mu, std
         
 
         sorted_TDS_normalized, mu, std = normalize_sorted_probs(raw_probs=TDS)        
