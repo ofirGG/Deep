@@ -13,6 +13,50 @@ from transformers import get_scheduler
 import time
 import random  # <-- Added for balancing
 
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+
+class BinaryFocalLoss(nn.Module):
+    def __init__(self, alpha=0.25, gamma=2.0, reduction='mean'):
+        """
+        Focal Loss for binary classification tasks (like Hallucination Detection).
+        alpha: Weighting factor for the positive class.
+        gamma: Focusing parameter to penalize hard-to-classify examples.
+        """
+        super(BinaryFocalLoss, self).__init__()
+        self.alpha = alpha
+        self.gamma = gamma
+        self.reduction = reduction
+
+    def forward(self, inputs, targets):
+        # Prevent log(0) by clamping probabilities
+        inputs = torch.clamp(inputs, min=1e-7, max=1.0 - 1e-7)
+        
+        # Standard Binary Cross Entropy
+        bce_loss = F.binary_cross_entropy(inputs, targets, reduction='none')
+        
+        # pt is the probability of the true class
+        pt = torch.where(targets == 1.0, inputs, 1.0 - inputs)
+        
+        # Focal weight: (1 - pt)^gamma
+        focal_weight = (1.0 - pt) ** self.gamma
+        
+        # Alpha weight
+        alpha_weight = torch.where(targets == 1.0, 
+                                   torch.tensor(self.alpha, device=inputs.device), 
+                                   torch.tensor(1.0 - self.alpha, device=inputs.device))
+        
+        # Combine everything
+        focal_loss = alpha_weight * focal_weight * bce_loss
+        
+        if self.reduction == 'mean':
+            return focal_loss.mean()
+        elif self.reduction == 'sum':
+            return focal_loss.sum()
+        else:
+            return focal_loss
+
 
 def get_train_test_datasets(args, logger):
     """Preprocesses datasets and loads them based on the task type."""
@@ -378,7 +422,8 @@ def main():
         "linear", optimizer=optimizer, num_warmup_steps=num_warmup_steps, num_training_steps=num_training_steps
     )
     
-    criterion = torch.nn.BCELoss()
+    # criterion = torch.nn.BCELoss()
+    criterion = BinaryFocalLoss(alpha=0.25, gamma=2.0)
     
     
     random_number = str(int(time.time() * 1e6) % (10**10))
