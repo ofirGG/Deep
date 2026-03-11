@@ -11,51 +11,6 @@ from torch.utils.data import DataLoader
 from utils.Architectures import get_model
 from transformers import get_scheduler
 import time
-import random  # <-- Added for balancing
-
-import torch
-import torch.nn as nn
-import torch.nn.functional as F
-
-class BinaryFocalLoss(nn.Module):
-    def __init__(self, alpha=0.25, gamma=2.0, reduction='mean'):
-        """
-        Focal Loss for binary classification tasks (like Hallucination Detection).
-        alpha: Weighting factor for the positive class.
-        gamma: Focusing parameter to penalize hard-to-classify examples.
-        """
-        super(BinaryFocalLoss, self).__init__()
-        self.alpha = alpha
-        self.gamma = gamma
-        self.reduction = reduction
-
-    def forward(self, inputs, targets):
-        # Prevent log(0) by clamping probabilities
-        inputs = torch.clamp(inputs, min=1e-7, max=1.0 - 1e-7)
-        
-        # Standard Binary Cross Entropy
-        bce_loss = F.binary_cross_entropy(inputs, targets, reduction='none')
-        
-        # pt is the probability of the true class
-        pt = torch.where(targets == 1.0, inputs, 1.0 - inputs)
-        
-        # Focal weight: (1 - pt)^gamma
-        focal_weight = (1.0 - pt) ** self.gamma
-        
-        # Alpha weight
-        alpha_weight = torch.where(targets == 1.0, 
-                                   torch.tensor(self.alpha, device=inputs.device), 
-                                   torch.tensor(1.0 - self.alpha, device=inputs.device))
-        
-        # Combine everything
-        focal_loss = alpha_weight * focal_weight * bce_loss
-        
-        if self.reduction == 'mean':
-            return focal_loss.mean()
-        elif self.reduction == 'sum':
-            return focal_loss.sum()
-        else:
-            return focal_loss
 
 
 def get_train_test_datasets(args, logger):
@@ -157,7 +112,9 @@ def get_train_test_val_subsets(args, train_indices, val_indices, test_indices, f
         test_data = test_dataset
     return train_data, val_data, test_data
 
+
 def train_one_epoch(model, dataloader, criterion, optimizer, scheduler, device, input_type='LOS'):
+    """Trains the model for one epoch."""
     model.train()
     total_loss = 0
     all_labels, all_predictions = [], []
@@ -170,14 +127,8 @@ def train_one_epoch(model, dataloader, criterion, optimizer, scheduler, device, 
             predictions = model(sorted_TDS_normalized, normalized_ATP, ATP_R).reshape(-1)
         else:
             raise ValueError("Invalid input type.")
-            
         loss = criterion(predictions, labels.float())
         loss.backward()
-        
-        # --- FIX 1: GRADIENT CLIPPING ---
-        # This prevents the spikes seen in your WandB val_loss charts
-        torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
-        
         optimizer.step()
         scheduler.step()
         
@@ -283,44 +234,8 @@ def train_model(logger, model, dataloader_train, dataloader_val, dataloader_test
     
     wandb.finish()
     logger.info("Training complete.")
-
-
-def balance_subset(subset, base_dataset):
-    """
-    Undersamples the majority class in a Subset to achieve a strict 50/50 balance.
-    """
-    idx_0 = []
-    idx_1 = []
     
-    # Iterate over the original indices in the subset
-    for idx in tqdm(subset.indices, desc="Balancing classes"):
-        # The label is the last element in the returned tuple from the dataset
-        raw_label = base_dataset[idx][-1]
-        
-        # Extract the integer value safely, whether it's a Tensor or a native int
-        if hasattr(raw_label, 'item'):
-            label = int(raw_label.item())
-        else:
-            label = int(raw_label)
-            
-        if label == 0:
-            idx_0.append(idx)
-        else:
-            idx_1.append(idx)
-            
-    minority_count = min(len(idx_0), len(idx_1))
     
-    # Randomly sample from both to match the minority count
-    random.seed(42)
-    balanced_idx_0 = random.sample(idx_0, minority_count)
-    balanced_idx_1 = random.sample(idx_1, minority_count)
-    
-    balanced_indices = balanced_idx_0 + balanced_idx_1
-    random.shuffle(balanced_indices)
-    
-    return Subset(base_dataset, balanced_indices)
-
-
 def main():
     """Main function to preprocess data and load datasets based on task type."""
     # Initialize logger
@@ -340,10 +255,14 @@ def main():
     # Process datasets
     dataset_train, dataset_test = get_train_test_datasets(args, logger)
 
+
     logger.info("Splitting dataset into train, validation, and test indices.")
     assert args.num_folds == 5, "num_folds should be 5."
     splits = stratified_split(dataset_train, percentage=1/args.num_folds, random_state=42)
     train_indices, val_indices, test_indices = get_train_val_test_indices(splits=splits)
+
+
+
 
     if 'BookMIA' not in args.train_dataset:
         logger.info(f"for {args.train_dataset} splitting to {args.num_folds} folds")
@@ -364,12 +283,6 @@ def main():
 
     logger.info(f"Running fold {args.fold_to_run + 1} of {args.num_folds}.")
     train_data, val_data, test_data = get_train_test_val_subsets(args, train_indices, val_indices, test_indices, args.fold_to_run, dataset_train, dataset_test)
-    
-    # --- הוספת מנגנון האיזון ---
-    logger.info("Balancing the training dataset to enforce a strict 50/50 class balance.")
-    train_data = balance_subset(train_data, dataset_train)
-    # ---------------------------
-
     logger.info("Creating dataloaders for training, validation, and test sets.")    
     dataloader_train = DataLoader(
         train_data,          # Your dataset instance
@@ -414,8 +327,7 @@ def main():
     args.total_params = total_params
     
     logger.info("Creating optimizer and scheduler.")
-    weight_decay_val = args.weight_decay if args.weight_decay > 0 else 1e-5
-    optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=weight_decay_val)
+    optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
     
     # Define the number of training steps
     num_training_steps = len(dataloader_train) * args.num_epochs  # Total training steps
@@ -428,7 +340,6 @@ def main():
     )
     
     criterion = torch.nn.BCELoss()
-    # criterion = BinaryFocalLoss(alpha=0.25, gamma=2.0)
     
     
     random_number = str(int(time.time() * 1e6) % (10**10))
