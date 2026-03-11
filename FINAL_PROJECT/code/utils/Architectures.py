@@ -36,9 +36,13 @@ class ATP_R_MLP(nn.Module):
         
         self.param_for_normalized_ATP = nn.Parameter(torch.randn(1, 1, self.hidden_dim))
         
-        # Only Entropy and Delta Entropy added
+        # Entropy and Delta Entropy
         self.param_for_entropy = nn.Parameter(torch.randn(1, 1, self.hidden_dim))
         self.param_for_delta_entropy = nn.Parameter(torch.randn(1, 1, self.hidden_dim))
+        
+        # Distribution Statistics (Variance and Range)
+        self.param_for_variance = nn.Parameter(torch.randn(1, 1, self.hidden_dim))
+        self.param_for_range = nn.Parameter(torch.randn(1, 1, self.hidden_dim))
 
         if self.args.rank_encoding == 'scale_encoding':
             self.param_for_ATP_R = nn.Parameter(torch.randn(1, 1, self.hidden_dim))        
@@ -68,18 +72,27 @@ class ATP_R_MLP(nn.Module):
         sorted_TDS_normalized = torch.nan_to_num(sorted_TDS_normalized, nan=0.0)
         normalized_ATP = torch.nan_to_num(normalized_ATP, nan=0.0)
 
-        # Entropy calculation
+        # Probabilities calculation
         tds_safe = sorted_TDS_normalized.to(torch.float32)
         probs = F.softmax(tds_safe, dim=-1)
         safe_probs = torch.clamp(probs, min=1e-7)
+        
+        # Entropy calculation
         entropy = -(probs * torch.log(safe_probs)).sum(dim=-1, keepdim=True)
         
         # Delta Entropy calculation
         delta_entropy = torch.zeros_like(entropy)
         delta_entropy[:, 1:, :] = entropy[:, 1:, :] - entropy[:, :-1, :]
         
+        # Distribution Statistics (Variance & Range)
+        variance = torch.var(probs, dim=-1, keepdim=True)
+        dist_range = torch.max(probs, dim=-1, keepdim=True).values - torch.min(probs, dim=-1, keepdim=True).values
+        
+        # Encoding features
         encoded_entropy = entropy.to(sorted_TDS_normalized.dtype) * self.param_for_entropy
         encoded_delta_entropy = delta_entropy.to(sorted_TDS_normalized.dtype) * self.param_for_delta_entropy
+        encoded_variance = variance.to(sorted_TDS_normalized.dtype) * self.param_for_variance
+        encoded_range = dist_range.to(sorted_TDS_normalized.dtype) * self.param_for_range
 
         if self.args.rank_encoding == 'scale_encoding':
             encoded_ATP_R = self.compute_encoded_ATP_R(normalized_ATP=normalized_ATP, ATP_R=ATP_R)
@@ -88,8 +101,8 @@ class ATP_R_MLP(nn.Module):
                     
         encoded_normalized_ATP = normalized_ATP * self.param_for_normalized_ATP
         
-        # Baseline addition with the new entropy features
-        x = encoded_ATP_R + encoded_normalized_ATP + encoded_entropy + encoded_delta_entropy
+        # Baseline addition with the new statistical features
+        x = encoded_ATP_R + encoded_normalized_ATP + encoded_entropy + encoded_delta_entropy + encoded_variance + encoded_range
         x = x.flatten(start_dim=1)
         
         for i in range(self.num_layers):
@@ -121,9 +134,13 @@ class ATP_R_Transf(nn.Module):
 
         self.param_for_normalized_ATP = nn.Parameter(torch.randn(1, 1, self.hidden_dim))
         
-        # Only Entropy and Delta Entropy added
+        # Entropy and Delta Entropy
         self.param_for_entropy = nn.Parameter(torch.randn(1, 1, self.hidden_dim))
         self.param_for_delta_entropy = nn.Parameter(torch.randn(1, 1, self.hidden_dim))
+        
+        # Distribution Statistics (Variance and Range)
+        self.param_for_variance = nn.Parameter(torch.randn(1, 1, self.hidden_dim))
+        self.param_for_range = nn.Parameter(torch.randn(1, 1, self.hidden_dim))
 
         if self.args.rank_encoding == 'scale_encoding':
             self.param_for_ATP_R = nn.Parameter(torch.randn(1, 1, self.hidden_dim))        
@@ -157,18 +174,27 @@ class ATP_R_Transf(nn.Module):
         sorted_TDS_normalized = torch.nan_to_num(sorted_TDS_normalized, nan=0.0)
         normalized_ATP = torch.nan_to_num(normalized_ATP, nan=0.0)
 
-        # Entropy calculation
+        # Probabilities calculation
         tds_safe = sorted_TDS_normalized.to(torch.float32)
         probs = F.softmax(tds_safe, dim=-1)
         safe_probs = torch.clamp(probs, min=1e-7)
+        
+        # Entropy calculation
         entropy = -(probs * torch.log(safe_probs)).sum(dim=-1, keepdim=True)
         
         # Delta Entropy calculation
         delta_entropy = torch.zeros_like(entropy)
         delta_entropy[:, 1:, :] = entropy[:, 1:, :] - entropy[:, :-1, :]
         
+        # Distribution Statistics (Variance & Range)
+        variance = torch.var(probs, dim=-1, keepdim=True)
+        dist_range = torch.max(probs, dim=-1, keepdim=True).values - torch.min(probs, dim=-1, keepdim=True).values
+        
+        # Encoding features
         encoded_entropy = entropy.to(sorted_TDS_normalized.dtype) * self.param_for_entropy
         encoded_delta_entropy = delta_entropy.to(sorted_TDS_normalized.dtype) * self.param_for_delta_entropy
+        encoded_variance = variance.to(sorted_TDS_normalized.dtype) * self.param_for_variance
+        encoded_range = dist_range.to(sorted_TDS_normalized.dtype) * self.param_for_range
             
         if self.args.rank_encoding == 'scale_encoding':
             encoded_ATP_R = self.compute_encoded_ATP_R(normalized_ATP=normalized_ATP, ATP_R=ATP_R)
@@ -177,8 +203,8 @@ class ATP_R_Transf(nn.Module):
                     
         encoded_normalized_ATP = normalized_ATP * self.param_for_normalized_ATP
         
-        # Baseline addition with the new entropy features
-        x = encoded_ATP_R + encoded_normalized_ATP + encoded_entropy + encoded_delta_entropy
+        # Baseline addition with the new statistical features
+        x = encoded_ATP_R + encoded_normalized_ATP + encoded_entropy + encoded_delta_entropy + encoded_variance + encoded_range
 
         b, n, _ = x.shape
         cls_tokens = repeat(self.cls_token, '1 1 d -> b 1 d', b=b)
@@ -217,9 +243,13 @@ class LOS_Net(nn.Module):
         
         self.param_for_normalized_ATP = nn.Parameter(torch.randn(1, 1, self.hidden_dim // 2))
         
-        # Only Entropy and Delta Entropy added
+        # Entropy and Delta Entropy
         self.param_for_entropy = nn.Parameter(torch.randn(1, 1, self.hidden_dim // 2))
         self.param_for_delta_entropy = nn.Parameter(torch.randn(1, 1, self.hidden_dim // 2))
+        
+        # Distribution Statistics (Variance and Range)
+        self.param_for_variance = nn.Parameter(torch.randn(1, 1, self.hidden_dim // 2))
+        self.param_for_range = nn.Parameter(torch.randn(1, 1, self.hidden_dim // 2))
 
         if self.args.rank_encoding == 'scale_encoding':
             self.param_for_ATP_R = nn.Parameter(torch.randn(1, 1, self.hidden_dim // 2))        
@@ -255,18 +285,27 @@ class LOS_Net(nn.Module):
         sorted_TDS_normalized = torch.nan_to_num(sorted_TDS_normalized, nan=0.0)
         normalized_ATP = torch.nan_to_num(normalized_ATP, nan=0.0)
 
-        # Entropy calculation
+        # Probabilities calculation
         tds_safe = sorted_TDS_normalized.to(torch.float32)
         probs = F.softmax(tds_safe, dim=-1)
         safe_probs = torch.clamp(probs, min=1e-7)
+        
+        # Entropy calculation
         entropy = -(probs * torch.log(safe_probs)).sum(dim=-1, keepdim=True)
         
         # Delta Entropy calculation
         delta_entropy = torch.zeros_like(entropy)
         delta_entropy[:, 1:, :] = entropy[:, 1:, :] - entropy[:, :-1, :]
         
+        # Distribution Statistics (Variance & Range)
+        variance = torch.var(probs, dim=-1, keepdim=True)
+        dist_range = torch.max(probs, dim=-1, keepdim=True).values - torch.min(probs, dim=-1, keepdim=True).values
+        
+        # Encoding features
         encoded_entropy = entropy.to(sorted_TDS_normalized.dtype) * self.param_for_entropy
         encoded_delta_entropy = delta_entropy.to(sorted_TDS_normalized.dtype) * self.param_for_delta_entropy
+        encoded_variance = variance.to(sorted_TDS_normalized.dtype) * self.param_for_variance
+        encoded_range = dist_range.to(sorted_TDS_normalized.dtype) * self.param_for_range
 
         if self.args.rank_encoding == 'scale_encoding':
             encoded_ATP_R = self.compute_encoded_ATP_R(normalized_ATP=normalized_ATP, ATP_R=ATP_R)
@@ -277,8 +316,8 @@ class LOS_Net(nn.Module):
         
         encoded_sorted_TDS_normalized = self.input_proj(sorted_TDS_normalized.to(torch.float32))
         
-        # Baseline addition with the new entropy features
-        x_scalars = encoded_ATP_R + encoded_normalized_ATP + encoded_entropy + encoded_delta_entropy
+        # Baseline addition with the new statistical features
+        x_scalars = encoded_ATP_R + encoded_normalized_ATP + encoded_entropy + encoded_delta_entropy + encoded_variance + encoded_range
         
         x = torch.cat((encoded_sorted_TDS_normalized, x_scalars), dim=-1)
         
