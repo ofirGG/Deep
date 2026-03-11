@@ -44,11 +44,11 @@ class ATP_R_MLP(nn.Module):
 
         # --- Early Fusion Projector for 4 Scalar Stats ---
         self.stats_projector = nn.Sequential(
-            nn.Linear(4, 32),
-            nn.LayerNorm(32),
+            nn.Linear(4, 64),
+            nn.LayerNorm(64),
             nn.GELU(),
-            nn.Dropout(p=0.3),
-            nn.Linear(32, self.hidden_dim)
+            nn.Dropout(p=0.1),
+            nn.Linear(64, self.hidden_dim // 2)
         )
 
         # --- Feature Fusion Layer (Bottleneck Architecture) ---
@@ -57,7 +57,7 @@ class ATP_R_MLP(nn.Module):
             nn.Linear(self.hidden_dim * 3, self.hidden_dim // 2),
             nn.LayerNorm(self.hidden_dim // 2),
             nn.GELU(),
-            nn.Dropout(p=0.4), 
+            nn.Dropout(p=0.2), 
             nn.Linear(self.hidden_dim // 2, self.hidden_dim),
             nn.LayerNorm(self.hidden_dim),
             nn.Dropout(p=self.dropout)
@@ -155,11 +155,11 @@ class ATP_R_Transf(nn.Module):
 
         # --- Early Fusion Projector for 4 Scalar Stats ---
         self.stats_projector = nn.Sequential(
-            nn.Linear(4, 32),
-            nn.LayerNorm(32),
+            nn.Linear(4, 64),
+            nn.LayerNorm(64),
             nn.GELU(),
-            nn.Dropout(p=0.3),
-            nn.Linear(32, self.hidden_dim)
+            nn.Dropout(p=0.1),
+            nn.Linear(64, self.hidden_dim // 2)
         )
 
         # --- Feature Fusion Layer (Bottleneck Architecture) ---
@@ -167,7 +167,7 @@ class ATP_R_Transf(nn.Module):
             nn.Linear(self.hidden_dim * 3, self.hidden_dim // 2),
             nn.LayerNorm(self.hidden_dim // 2),
             nn.GELU(),
-            nn.Dropout(p=0.4),
+            nn.Dropout(p=0.2),
             nn.Linear(self.hidden_dim // 2, self.hidden_dim),
             nn.LayerNorm(self.hidden_dim),
             nn.Dropout(p=self.dropout)
@@ -278,11 +278,11 @@ class LOS_Net(nn.Module):
         # --- Early Fusion Projector for 4 Scalar Stats ---
         # Note: Projects to hidden_dim // 2 to match LOS_Net scaling
         self.stats_projector = nn.Sequential(
-            nn.Linear(4, 32),
-            nn.LayerNorm(32),
+            nn.Linear(4, 64),
+            nn.LayerNorm(64),
             nn.GELU(),
-            nn.Dropout(p=0.3),
-            nn.Linear(32, self.hidden_dim // 2)
+            nn.Dropout(p=0.1),
+            nn.Linear(64, self.hidden_dim // 2)
         )
 
         # --- Feature Fusion Layer ---
@@ -291,7 +291,7 @@ class LOS_Net(nn.Module):
             nn.Linear((self.hidden_dim // 2) * 3, self.hidden_dim // 4),
             nn.LayerNorm(self.hidden_dim // 4),
             nn.GELU(),
-            nn.Dropout(p=0.4),
+            nn.Dropout(p=0.2),
             nn.Linear(self.hidden_dim // 4, self.hidden_dim // 2),
             nn.LayerNorm(self.hidden_dim // 2),
             nn.Dropout(p=self.dropout)

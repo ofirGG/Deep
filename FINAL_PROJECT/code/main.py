@@ -414,7 +414,7 @@ def main():
     args.total_params = total_params
     
     logger.info("Creating optimizer and scheduler.")
-    weight_decay_val = args.weight_decay if args.weight_decay > 0 else 1e-3
+    weight_decay_val = args.weight_decay if args.weight_decay > 0 else 1e-5
     optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=weight_decay_val)
     
     # Define the number of training steps
