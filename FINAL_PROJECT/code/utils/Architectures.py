@@ -5,6 +5,7 @@ from utils.constants import MODEL_VOCAB_SIZES
 from einops import repeat
 from vit_pytorch import ViT
 from utils.Architectures_utils import *
+
 def get_model(args, max_sequence_length, actual_sequence_length, input_dim, input_shape):
     model_mapping = {
         # LOS-based
@@ -34,17 +35,18 @@ class ATP_R_MLP(nn.Module):
         self.actual_sequence_length = actual_sequence_length
         
         self.param_for_normalized_ATP = nn.Parameter(torch.randn(1, 1, self.hidden_dim))
+        
+        # Only Entropy and Delta Entropy added
+        self.param_for_entropy = nn.Parameter(torch.randn(1, 1, self.hidden_dim))
+        self.param_for_delta_entropy = nn.Parameter(torch.randn(1, 1, self.hidden_dim))
+
         if self.args.rank_encoding == 'scale_encoding':
             self.param_for_ATP_R = nn.Parameter(torch.randn(1, 1, self.hidden_dim))        
         elif self.args.rank_encoding == 'one_hot_encoding':
-            self.one_hot_embedding = nn.Embedding(MODEL_VOCAB_SIZES[self.args.LLM],
-            self.hidden_dim,
-            # sparse=True
-            )
+            self.one_hot_embedding = nn.Embedding(MODEL_VOCAB_SIZES[self.args.LLM], self.hidden_dim)
         else:
-            raise ValueError("Invalid encoding type. Please choose either 'scale_encoding' or 'one_hot_encoding'.")
+            raise ValueError("Invalid encoding type.")
 
-        
         # Linear layers
         self.lin_layers = nn.ModuleList()
         self.batch_norms = nn.ModuleList()
@@ -55,30 +57,39 @@ class ATP_R_MLP(nn.Module):
             if (i+1) < self.num_layers:
                 self.batch_norms.append(nn.BatchNorm1d(out_dim))
 
-        # Output act
         self.sigmoid = nn.Sigmoid()
+
     def compute_encoded_ATP_R(self, normalized_ATP, ATP_R):
-        """
-        Computes encoded_ATP_R based on normalized_ATP and ATP_R.
-        """
         encoded_ATP_R = 2 * (0.5 - (ATP_R / MODEL_VOCAB_SIZES[self.args.LLM]))
-        
         return normalized_ATP * encoded_ATP_R.unsqueeze(-1) * self.param_for_ATP_R
 
     def forward(self, sorted_TDS_normalized, normalized_ATP, ATP_R):
+        # NaN safeguards
+        sorted_TDS_normalized = torch.nan_to_num(sorted_TDS_normalized, nan=0.0)
+        normalized_ATP = torch.nan_to_num(normalized_ATP, nan=0.0)
 
+        # Entropy calculation
+        tds_safe = sorted_TDS_normalized.to(torch.float32)
+        probs = F.softmax(tds_safe, dim=-1)
+        safe_probs = torch.clamp(probs, min=1e-7)
+        entropy = -(probs * torch.log(safe_probs)).sum(dim=-1, keepdim=True)
+        
+        # Delta Entropy calculation
+        delta_entropy = torch.zeros_like(entropy)
+        delta_entropy[:, 1:, :] = entropy[:, 1:, :] - entropy[:, :-1, :]
+        
+        encoded_entropy = entropy.to(sorted_TDS_normalized.dtype) * self.param_for_entropy
+        encoded_delta_entropy = delta_entropy.to(sorted_TDS_normalized.dtype) * self.param_for_delta_entropy
 
-        # Encoding one-hot rank
         if self.args.rank_encoding == 'scale_encoding':
             encoded_ATP_R = self.compute_encoded_ATP_R(normalized_ATP=normalized_ATP, ATP_R=ATP_R)
         elif self.args.rank_encoding == 'one_hot_encoding':
             encoded_ATP_R = normalized_ATP * self.one_hot_embedding(ATP_R)
-        else:
-            raise ValueError("Invalid encoding type. Please choose either 'scale_encoding' or 'one_hot_encoding'.")
                     
-        # Encoding normalized mark
         encoded_normalized_ATP = normalized_ATP * self.param_for_normalized_ATP
-        x = encoded_ATP_R + encoded_normalized_ATP
+        
+        # Baseline addition with the new entropy features
+        x = encoded_ATP_R + encoded_normalized_ATP + encoded_entropy + encoded_delta_entropy
         x = x.flatten(start_dim=1)
         
         for i in range(self.num_layers):
@@ -88,8 +99,8 @@ class ATP_R_MLP(nn.Module):
                 x = F.relu(x)
                 x = F.dropout(x, p=self.dropout)
 
-
-        return self.sigmoid(x).squeeze(-1)  # Apply sigmoid for binary classification
+        x = torch.nan_to_num(x, nan=0.0)
+        return self.sigmoid(x).squeeze(-1)
 
 
 class ATP_R_Transf(nn.Module):
@@ -105,28 +116,25 @@ class ATP_R_Transf(nn.Module):
         self.dropout = args.dropout
         self.num_layers = args.num_layers
         self.pool = args.pool
-        assert self.pool in {'cls', 'mean'}, 'pool type must be either cls (cls token) or mean (mean pooling)'
+        
+        assert self.pool in {'cls', 'mean'}, "Pool type must be either 'cls' or 'mean'"
 
         self.param_for_normalized_ATP = nn.Parameter(torch.randn(1, 1, self.hidden_dim))
+        
+        # Only Entropy and Delta Entropy added
+        self.param_for_entropy = nn.Parameter(torch.randn(1, 1, self.hidden_dim))
+        self.param_for_delta_entropy = nn.Parameter(torch.randn(1, 1, self.hidden_dim))
+
         if self.args.rank_encoding == 'scale_encoding':
             self.param_for_ATP_R = nn.Parameter(torch.randn(1, 1, self.hidden_dim))        
         elif self.args.rank_encoding == 'one_hot_encoding':
-            self.one_hot_embedding = nn.Embedding(MODEL_VOCAB_SIZES[self.args.LLM],
-            self.hidden_dim,
-            # sparse=True
-            )
+            self.one_hot_embedding = nn.Embedding(MODEL_VOCAB_SIZES[self.args.LLM], self.hidden_dim)
         else:
-            raise ValueError("Invalid encoding type. Please choose either 'scale_encoding' or 'one_hot_encoding'.")
-        
-        
+            raise ValueError("Invalid encoding type.")
 
-        # CLS token
         self.cls_token = nn.Parameter(torch.randn(1, 1, self.hidden_dim))
-
-        # Positional embeddings with a predefined max sequence length
         self.pos_embedding = nn.Embedding(self.max_sequence_length + 1, self.hidden_dim)
 
-        # Transformer encoder layers
         self.attention_layers = nn.ModuleList([
             nn.TransformerEncoderLayer(
                 d_model=self.hidden_dim,
@@ -136,61 +144,66 @@ class ATP_R_Transf(nn.Module):
                 batch_first=True
             ) for _ in range(self.num_layers)
         ])
-
-        # Classification head
+        
         self.mlp_head = nn.Linear(self.hidden_dim, 1)
         self.sigmoid = nn.Sigmoid()
 
     def compute_encoded_ATP_R(self, normalized_ATP, ATP_R):
-        """
-        Computes encoded_ATP_R based on normalized_ATP and ATP_R.
-        """
         encoded_ATP_R = 2 * (0.5 - (ATP_R / MODEL_VOCAB_SIZES[self.args.LLM]))
-        
         return normalized_ATP * encoded_ATP_R.unsqueeze(-1) * self.param_for_ATP_R
     
     def forward(self, sorted_TDS_normalized, normalized_ATP, ATP_R):
+        # NaN safeguards
+        sorted_TDS_normalized = torch.nan_to_num(sorted_TDS_normalized, nan=0.0)
+        normalized_ATP = torch.nan_to_num(normalized_ATP, nan=0.0)
+
+        # Entropy calculation
+        tds_safe = sorted_TDS_normalized.to(torch.float32)
+        probs = F.softmax(tds_safe, dim=-1)
+        safe_probs = torch.clamp(probs, min=1e-7)
+        entropy = -(probs * torch.log(safe_probs)).sum(dim=-1, keepdim=True)
+        
+        # Delta Entropy calculation
+        delta_entropy = torch.zeros_like(entropy)
+        delta_entropy[:, 1:, :] = entropy[:, 1:, :] - entropy[:, :-1, :]
+        
+        encoded_entropy = entropy.to(sorted_TDS_normalized.dtype) * self.param_for_entropy
+        encoded_delta_entropy = delta_entropy.to(sorted_TDS_normalized.dtype) * self.param_for_delta_entropy
             
-        # Encoding one-hot rank
         if self.args.rank_encoding == 'scale_encoding':
             encoded_ATP_R = self.compute_encoded_ATP_R(normalized_ATP=normalized_ATP, ATP_R=ATP_R)
         elif self.args.rank_encoding == 'one_hot_encoding':
             encoded_ATP_R = normalized_ATP * self.one_hot_embedding(ATP_R)
-        else:
-            raise ValueError("Invalid encoding type. Please choose either 'scale_encoding' or 'one_hot_encoding'.")
                     
-        # Encoding normalized mark
         encoded_normalized_ATP = normalized_ATP * self.param_for_normalized_ATP
-        x = encoded_ATP_R + encoded_normalized_ATP
-
-    
-        # Add [CLS] token
-        b, n, _ = x.shape
-        cls_tokens = repeat(self.cls_token, '1 1 d -> b 1 d', b=b)  # Shape: [B, 1, hidden_dim]
-        x = torch.cat((cls_tokens, x), dim=1)  # Shape: [B, N+1, hidden_dim]
-
-        # Generate positional indices and add embeddings
-        pos_indices = torch.arange(n + 1, device=x.device).unsqueeze(0)  # Shape: [1, N+1]
-        pos_embeddings = self.pos_embedding(pos_indices)  # Shape: [1, N+1, hidden_dim]
-        x += pos_embeddings
-
-        # Pass through Transformer layers
-        for layer in self.attention_layers:
-            x = layer(x)  # Shape remains [B, N+1, hidden_dim]
-
-        # Pooling: Use the CLS token
-        x = x.mean(dim = 1) if self.pool == 'mean' else x[:, 0]
-
-        # Final classification head
-        x = self.mlp_head(x)  # Shape: [B, 1]
         
-        return self.sigmoid(x).squeeze(-1)  # Apply sigmoid for binary classification
+        # Baseline addition with the new entropy features
+        x = encoded_ATP_R + encoded_normalized_ATP + encoded_entropy + encoded_delta_entropy
+
+        b, n, _ = x.shape
+        cls_tokens = repeat(self.cls_token, '1 1 d -> b 1 d', b=b)
+        x = torch.cat((cls_tokens, x), dim=1)
+
+        pos_indices = torch.arange(n + 1, device=x.device).unsqueeze(0)
+        x += self.pos_embedding(pos_indices)
+
+        for layer in self.attention_layers:
+            x = layer(x)
+
+        if self.pool == 'mean':
+            x = x.mean(dim=1)
+        else: 
+            x = x[:, 0]
+
+        x = self.mlp_head(x)
+        x = torch.nan_to_num(x, nan=0.0) 
+        
+        return self.sigmoid(x).squeeze(-1)
     
 
 class LOS_Net(nn.Module):
     def __init__(self, args, max_sequence_length, input_dim=1):
         super().__init__()
-        
         self.args = args
         self.max_sequence_length = max_sequence_length
         self.input_dim = input_dim
@@ -200,34 +213,26 @@ class LOS_Net(nn.Module):
         self.num_layers = args.num_layers
         self.pool = args.pool
         
-        assert self.pool in {'cls', 'mean'}, "Pool type must be either 'cls' (CLS token) or 'mean' (mean pooling)"
+        assert self.pool in {'cls', 'mean'}, "Pool type must be 'cls' or 'mean'"
         
         self.param_for_normalized_ATP = nn.Parameter(torch.randn(1, 1, self.hidden_dim // 2))
+        
+        # Only Entropy and Delta Entropy added
+        self.param_for_entropy = nn.Parameter(torch.randn(1, 1, self.hidden_dim // 2))
+        self.param_for_delta_entropy = nn.Parameter(torch.randn(1, 1, self.hidden_dim // 2))
 
-
-        self.param_for_normalized_ATP = nn.Parameter(torch.randn(1, 1, self.hidden_dim // 2))
         if self.args.rank_encoding == 'scale_encoding':
             self.param_for_ATP_R = nn.Parameter(torch.randn(1, 1, self.hidden_dim // 2))        
         elif self.args.rank_encoding == 'one_hot_encoding':
-            self.one_hot_embedding = nn.Embedding(MODEL_VOCAB_SIZES[self.args.LLM],
-            self.hidden_dim // 2,
-            # sparse=True
-            )
+            self.one_hot_embedding = nn.Embedding(MODEL_VOCAB_SIZES[self.args.LLM], self.hidden_dim // 2)
         else:
-            raise ValueError("Invalid encoding type. Please choose either 'scale_encoding' or 'one_hot_encoding'.")
+            raise ValueError("Invalid encoding type.")
         
-        
-        
-        # Input embedding layer
         self.input_proj = nn.Linear(input_dim, self.hidden_dim // 2)
         
-        # CLS token
         self.cls_token = nn.Parameter(torch.randn(1, 1, self.hidden_dim))
-        
-        # Positional embeddings
         self.pos_embedding = nn.Embedding(self.max_sequence_length + 1, self.hidden_dim)
         
-        # Transformer encoder layers
         self.attention_layers = nn.ModuleList([
             nn.TransformerEncoderLayer(
                 d_model=self.hidden_dim,
@@ -238,67 +243,62 @@ class LOS_Net(nn.Module):
             ) for _ in range(self.num_layers)
         ])
         
-        # Classification head
         self.mlp_head = nn.Linear(self.hidden_dim, 1)
         self.sigmoid = nn.Sigmoid()
 
     def compute_encoded_ATP_R(self, normalized_ATP, ATP_R):
-        """
-        Computes encoded_ATP_R based on normalized_ATP and ATP_R.
-        """
         encoded_ATP_R = 2 * (0.5 - (ATP_R / MODEL_VOCAB_SIZES[self.args.LLM]))
         return normalized_ATP * encoded_ATP_R.unsqueeze(-1) * self.param_for_ATP_R
     
     def forward(self, sorted_TDS_normalized, normalized_ATP, ATP_R):
-        """
-        Forward pass for LOS_Net.
+        # NaN safeguards
+        sorted_TDS_normalized = torch.nan_to_num(sorted_TDS_normalized, nan=0.0)
+        normalized_ATP = torch.nan_to_num(normalized_ATP, nan=0.0)
 
-        Args:
-            sorted_TDS_normalized (torch.Tensor): Shape [B, N, V].
-            normalized_ATP (torch.Tensor): Shape [B, N, 1].
-            ATP_R (torch.Tensor): Shape [B, N].
-            sigmoid (bool): Whether to apply sigmoid activation. Default is True.
+        # Entropy calculation
+        tds_safe = sorted_TDS_normalized.to(torch.float32)
+        probs = F.softmax(tds_safe, dim=-1)
+        safe_probs = torch.clamp(probs, min=1e-7)
+        entropy = -(probs * torch.log(safe_probs)).sum(dim=-1, keepdim=True)
+        
+        # Delta Entropy calculation
+        delta_entropy = torch.zeros_like(entropy)
+        delta_entropy[:, 1:, :] = entropy[:, 1:, :] - entropy[:, :-1, :]
+        
+        encoded_entropy = entropy.to(sorted_TDS_normalized.dtype) * self.param_for_entropy
+        encoded_delta_entropy = delta_entropy.to(sorted_TDS_normalized.dtype) * self.param_for_delta_entropy
 
-        Returns:
-            torch.Tensor: Output tensor of shape [B, 1] (if sigmoid=True) or raw logits (if sigmoid=False).
-        """
-        # Encoding one-hot rank
         if self.args.rank_encoding == 'scale_encoding':
             encoded_ATP_R = self.compute_encoded_ATP_R(normalized_ATP=normalized_ATP, ATP_R=ATP_R)
         elif self.args.rank_encoding == 'one_hot_encoding':
             encoded_ATP_R = normalized_ATP * self.one_hot_embedding(ATP_R)
-        else:
-            raise ValueError("Invalid encoding type. Please choose either 'scale_encoding' or 'one_hot_encoding'.")
             
-        
-        # Encoding normalized mark
         encoded_normalized_ATP = normalized_ATP * self.param_for_normalized_ATP
         
-        
-        # Encoding normalized vocab
         encoded_sorted_TDS_normalized = self.input_proj(sorted_TDS_normalized.to(torch.float32))
         
-        # Concatenating embeddings
-        x = torch.cat((encoded_sorted_TDS_normalized, encoded_ATP_R + encoded_normalized_ATP), dim=-1)
+        # Baseline addition with the new entropy features
+        x_scalars = encoded_ATP_R + encoded_normalized_ATP + encoded_entropy + encoded_delta_entropy
         
-        # Adding CLS token
+        x = torch.cat((encoded_sorted_TDS_normalized, x_scalars), dim=-1)
+        
         b, n, _ = x.shape
         cls_tokens = repeat(self.cls_token, '1 1 d -> b 1 d', b=b)
         x = torch.cat((cls_tokens, x), dim=1)
         
-        # Positional embeddings
         pos_indices = torch.arange(n + 1, device=x.device).unsqueeze(0)
         x += self.pos_embedding(pos_indices)
         
-        # Transformer layers
         for layer in self.attention_layers:
             x = layer(x)
         
-        # Pooling
-        x = x.mean(dim=1) if self.pool == 'mean' else x[:, 0]
+        if self.pool == 'mean':
+            x = x.mean(dim=1)
+        else: 
+            x = x[:, 0]
         
-        # Classification head
         x = self.mlp_head(x)
+        x = torch.nan_to_num(x, nan=0.0) 
+        
         return self.sigmoid(x).squeeze(-1)
-   
 ######################## LOS ########################
