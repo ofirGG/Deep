@@ -202,40 +202,35 @@ def process_file(params):
             return ATP_R
             
 
-        def normalize_sorted_probs(raw_probs: torch.Tensor, top_p: float = 0.95) -> torch.Tensor:
+        def normalize_sorted_probs(raw_probs: torch.Tensor, top_p: float = 0.99, fixed_k: int = 1000) -> torch.Tensor:
             """
-            Normalizes the sorted raw probabilities excluding the last two columns.
-            Applies Dynamic K (Nucleus) masking to zero-out the long tail of probabilities.
+            Hybrid Dynamic K: Stable normalization coupled with Nucleus masking.
             """
-            # 1. Sort the probabilities/logits in descending order
+            # 1. Sort the logits in descending order (ignoring the metadata columns)
             sorted_raw_probs = torch.sort(raw_probs[:, :-2], descending=True)[0]
             
-            # 2. Convert to probabilities to compute cumulative mass safely 
-            # (Softmax ensures a valid distribution even if raw_probs are logits)
-            probs = torch.softmax(sorted_raw_probs, dim=-1)
+            # 2. Decoupled Normalization: Compute stable mu and std using a FIXED K
+            # This completely eliminates the statistical variance that caused overfitting
+            stable_probs_for_stats = sorted_raw_probs[:, :fixed_k]
+            mu = stable_probs_for_stats.mean(dim=-1, keepdim=True)
+            std = stable_probs_for_stats.std(dim=-1, keepdim=True) + 1e-8
             
-            # 3. Compute cumulative sum and create the dynamic K mask
+            # Normalize the entire sequence using these stable statistics
+            sorted_raw_probs_normalized = (sorted_raw_probs - mu) / std
+            
+            # 3. Dynamic K (Nucleus) Masking
+            probs = torch.softmax(sorted_raw_probs, dim=-1)
             cumsum_probs = torch.cumsum(probs, dim=-1)
             mask = cumsum_probs <= top_p
             
             # Shift mask right to ensure we include the token that crosses the threshold
             mask[:, 1:] = mask[:, :-1].clone()
-            mask[:, 0] = True # Always keep at least the top-1 token
+            mask[:, 0] = True 
             
-            # 4. Compute mu and std ONLY over the valid dynamic K tokens to remove noise
-            valid_counts = mask.sum(dim=-1, keepdim=True).clamp(min=1)
-            mu = (sorted_raw_probs * mask).sum(dim=-1, keepdim=True) / valid_counts
-            
-            variance = (((sorted_raw_probs - mu) ** 2) * mask).sum(dim=-1, keepdim=True) / valid_counts
-            std = torch.sqrt(variance + 1e-8)
-            
-            # 5. Normalize
-            sorted_raw_probs_normalized = (sorted_raw_probs - mu) / std
-            
-            # 6. Apply mask: Zero out all tokens beyond the dynamic K threshold
+            # 4. Apply mask: Zero out the long tail
             sorted_raw_probs_normalized[~mask] = 0.0
             
-            return sorted_raw_probs_normalized, mu, std
+            return sorted_raw_probs_normalized
         
 
         sorted_TDS_normalized, mu, std = normalize_sorted_probs(raw_probs=TDS)        
