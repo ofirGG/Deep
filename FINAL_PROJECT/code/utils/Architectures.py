@@ -51,13 +51,13 @@ class ATP_R_MLP(nn.Module):
         else:
             raise ValueError("Invalid encoding type.")
 
-        # --- Feature Fusion Layer (For 6 Features) ---
+        # --- Feature Fusion Layer (Bottleneck Architecture) ---
         self.feature_fusion = nn.Sequential(
-            nn.LayerNorm(self.hidden_dim * 6),  
-            nn.Linear(self.hidden_dim * 6, self.hidden_dim * 3),
+            nn.Linear(self.hidden_dim * 6, self.hidden_dim),
+            nn.LayerNorm(self.hidden_dim),                
             nn.GELU(),
-            nn.Dropout(self.dropout),         
-            nn.Linear(self.hidden_dim * 3, self.hidden_dim)
+            nn.Dropout(self.dropout),
+            nn.Linear(self.hidden_dim, self.hidden_dim)    
         )
 
         # Linear layers
@@ -161,13 +161,13 @@ class ATP_R_Transf(nn.Module):
         else:
             raise ValueError("Invalid encoding type.")
 
-        # --- Feature Fusion Layer (For 6 Features) ---
+        # --- Feature Fusion Layer (Bottleneck Architecture) ---
         self.feature_fusion = nn.Sequential(
-            nn.LayerNorm(self.hidden_dim * 6),
-            nn.Linear(self.hidden_dim * 6, self.hidden_dim * 3),
+            nn.Linear(self.hidden_dim * 6, self.hidden_dim),
+            nn.LayerNorm(self.hidden_dim),                  
             nn.GELU(),
-            nn.Dropout(self.dropout),      
-            nn.Linear(self.hidden_dim * 3, self.hidden_dim)
+            nn.Dropout(self.dropout),
+            nn.Linear(self.hidden_dim, self.hidden_dim)     
         )
 
         self.cls_token = nn.Parameter(torch.randn(1, 1, self.hidden_dim))
@@ -280,13 +280,13 @@ class LOS_Net(nn.Module):
         else:
             raise ValueError("Invalid encoding type.")
             
-        # --- Feature Fusion Layer (Dimensions adjusted for LOS_Net) ---
+        # --- Feature Fusion Layer (Dimensions adjusted for LOS_Net Bottleneck) ---
         self.feature_fusion = nn.Sequential(
-            nn.LayerNorm((self.hidden_dim // 2) * 6), 
-            nn.Linear((self.hidden_dim // 2) * 6, self.hidden_dim),
+            nn.Linear((self.hidden_dim // 2) * 6, self.hidden_dim // 2), 
+            nn.LayerNorm(self.hidden_dim // 2),                        
             nn.GELU(),
-            nn.Dropout(self.dropout),                 
-            nn.Linear(self.hidden_dim, self.hidden_dim // 2)
+            nn.Dropout(self.dropout),
+            nn.Linear(self.hidden_dim // 2, self.hidden_dim // 2)
         )
         
         self.input_proj = nn.Linear(input_dim, self.hidden_dim // 2)
