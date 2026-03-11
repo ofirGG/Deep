@@ -51,6 +51,13 @@ class ATP_R_MLP(nn.Module):
         else:
             raise ValueError("Invalid encoding type.")
 
+        # --- Feature Fusion Layer (For 6 Features) ---
+        self.feature_fusion = nn.Sequential(
+            nn.Linear(self.hidden_dim * 6, self.hidden_dim * 3),
+            nn.GELU(),
+            nn.Linear(self.hidden_dim * 3, self.hidden_dim)
+        )
+
         # Linear layers
         self.lin_layers = nn.ModuleList()
         self.batch_norms = nn.ModuleList()
@@ -101,8 +108,11 @@ class ATP_R_MLP(nn.Module):
                     
         encoded_normalized_ATP = normalized_ATP * self.param_for_normalized_ATP
         
-        # Baseline addition with the new statistical features
-        x = encoded_ATP_R + encoded_normalized_ATP + encoded_entropy + encoded_delta_entropy + encoded_variance + encoded_range
+        # --- Concatenation and Feature Fusion ---
+        raw_features = torch.cat([encoded_ATP_R, encoded_normalized_ATP, encoded_entropy, encoded_delta_entropy, encoded_variance, encoded_range], dim=-1)
+        x = self.feature_fusion(raw_features)
+        # ----------------------------------------
+        
         x = x.flatten(start_dim=1)
         
         for i in range(self.num_layers):
@@ -148,6 +158,13 @@ class ATP_R_Transf(nn.Module):
             self.one_hot_embedding = nn.Embedding(MODEL_VOCAB_SIZES[self.args.LLM], self.hidden_dim)
         else:
             raise ValueError("Invalid encoding type.")
+
+        # --- Feature Fusion Layer ---
+        self.feature_fusion = nn.Sequential(
+            nn.Linear(self.hidden_dim * 6, self.hidden_dim * 3),
+            nn.GELU(),
+            nn.Linear(self.hidden_dim * 3, self.hidden_dim)
+        )
 
         self.cls_token = nn.Parameter(torch.randn(1, 1, self.hidden_dim))
         self.pos_embedding = nn.Embedding(self.max_sequence_length + 1, self.hidden_dim)
@@ -203,8 +220,9 @@ class ATP_R_Transf(nn.Module):
                     
         encoded_normalized_ATP = normalized_ATP * self.param_for_normalized_ATP
         
-        # Baseline addition with the new statistical features
-        x = encoded_ATP_R + encoded_normalized_ATP + encoded_entropy + encoded_delta_entropy + encoded_variance + encoded_range
+        # --- Concatenation and Feature Fusion ---
+        raw_features = torch.cat([encoded_ATP_R, encoded_normalized_ATP, encoded_entropy, encoded_delta_entropy, encoded_variance, encoded_range], dim=-1)
+        x = self.feature_fusion(raw_features)
 
         b, n, _ = x.shape
         cls_tokens = repeat(self.cls_token, '1 1 d -> b 1 d', b=b)
@@ -257,6 +275,13 @@ class LOS_Net(nn.Module):
             self.one_hot_embedding = nn.Embedding(MODEL_VOCAB_SIZES[self.args.LLM], self.hidden_dim // 2)
         else:
             raise ValueError("Invalid encoding type.")
+            
+        # --- Feature Fusion Layer (Dimensions adjusted for LOS_Net) ---
+        self.feature_fusion = nn.Sequential(
+            nn.Linear((self.hidden_dim // 2) * 6, self.hidden_dim),
+            nn.GELU(),
+            nn.Linear(self.hidden_dim, self.hidden_dim // 2)
+        )
         
         self.input_proj = nn.Linear(input_dim, self.hidden_dim // 2)
         
@@ -316,8 +341,10 @@ class LOS_Net(nn.Module):
         
         encoded_sorted_TDS_normalized = self.input_proj(sorted_TDS_normalized.to(torch.float32))
         
-        # Baseline addition with the new statistical features
-        x_scalars = encoded_ATP_R + encoded_normalized_ATP + encoded_entropy + encoded_delta_entropy + encoded_variance + encoded_range
+        # --- Concatenation and Feature Fusion ---
+        raw_features = torch.cat([encoded_ATP_R, encoded_normalized_ATP, encoded_entropy, encoded_delta_entropy, encoded_variance, encoded_range], dim=-1)
+        x_scalars = self.feature_fusion(raw_features)
+        # ----------------------------------------
         
         x = torch.cat((encoded_sorted_TDS_normalized, x_scalars), dim=-1)
         
