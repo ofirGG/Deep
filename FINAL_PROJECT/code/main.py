@@ -188,10 +188,6 @@ def train_one_epoch(model, dataloader, criterion, optimizer, scheduler, device, 
     fpr, tpr, _ = roc_curve(np.array(all_labels, dtype=bool), np.array(all_predictions))
     return total_loss / len(dataloader), auc(fpr, tpr)
 
-# In main(), ensure weight_decay is passed. If args.weight_decay is 0, set it to 1e-3.
-weight_decay_val = args.weight_decay if args.weight_decay > 0 else 1e-3
-optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=weight_decay_val)
-
 def evaluate(model, dataloader, criterion, device, desc="Validation", input_type='LOS'):
     """Evaluates the model on validation or test data."""
     model.eval()
@@ -418,7 +414,8 @@ def main():
     args.total_params = total_params
     
     logger.info("Creating optimizer and scheduler.")
-    optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
+    weight_decay_val = args.weight_decay if args.weight_decay > 0 else 1e-3
+    optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=weight_decay_val)
     
     # Define the number of training steps
     num_training_steps = len(dataloader_train) * args.num_epochs  # Total training steps
