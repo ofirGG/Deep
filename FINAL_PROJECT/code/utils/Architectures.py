@@ -80,8 +80,9 @@ class ATP_R_MLP(nn.Module):
         return normalized_ATP * encoded_ATP_R.unsqueeze(-1) * self.param_for_ATP_R
 
     def forward(self, sorted_TDS_normalized, normalized_ATP, ATP_R):
-        sorted_TDS_normalized = torch.nan_to_num(sorted_TDS_normalized, nan=0.0)
-        normalized_ATP = torch.nan_to_num(normalized_ATP, nan=0.0)
+        # NaN safeguards AND strict FP32 casting
+        sorted_TDS_normalized = torch.nan_to_num(sorted_TDS_normalized, nan=0.0).to(torch.float32)
+        normalized_ATP = torch.nan_to_num(normalized_ATP, nan=0.0).to(torch.float32)
 
         tds_safe = sorted_TDS_normalized.to(torch.float32)
         probs = F.softmax(tds_safe, dim=-1)
@@ -193,8 +194,9 @@ class ATP_R_Transf(nn.Module):
         return normalized_ATP * encoded_ATP_R.unsqueeze(-1) * self.param_for_ATP_R
     
     def forward(self, sorted_TDS_normalized, normalized_ATP, ATP_R):
-        sorted_TDS_normalized = torch.nan_to_num(sorted_TDS_normalized, nan=0.0)
-        normalized_ATP = torch.nan_to_num(normalized_ATP, nan=0.0)
+        # NaN safeguards AND strict FP32 casting
+        sorted_TDS_normalized = torch.nan_to_num(sorted_TDS_normalized, nan=0.0).to(torch.float32)
+        normalized_ATP = torch.nan_to_num(normalized_ATP, nan=0.0).to(torch.float32)
 
         tds_safe = sorted_TDS_normalized.to(torch.float32)
         probs = F.softmax(tds_safe, dim=-1)
@@ -318,8 +320,9 @@ class LOS_Net(nn.Module):
         return normalized_ATP * encoded_ATP_R.unsqueeze(-1) * self.param_for_ATP_R
     
     def forward(self, sorted_TDS_normalized, normalized_ATP, ATP_R):
-        sorted_TDS_normalized = torch.nan_to_num(sorted_TDS_normalized, nan=0.0)
-        normalized_ATP = torch.nan_to_num(normalized_ATP, nan=0.0)
+        # NaN safeguards AND strict FP32 casting
+        sorted_TDS_normalized = torch.nan_to_num(sorted_TDS_normalized, nan=0.0).to(torch.float32)
+        normalized_ATP = torch.nan_to_num(normalized_ATP, nan=0.0).to(torch.float32)
 
         tds_safe = sorted_TDS_normalized.to(torch.float32)
         probs = F.softmax(tds_safe, dim=-1)
