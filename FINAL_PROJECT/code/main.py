@@ -11,6 +11,7 @@ from torch.utils.data import DataLoader
 from utils.Architectures import get_model
 from transformers import get_scheduler
 import time
+import random  # <-- Added for balancing
 
 
 def get_train_test_datasets(args, logger):
@@ -234,8 +235,37 @@ def train_model(logger, model, dataloader_train, dataloader_val, dataloader_test
     
     wandb.finish()
     logger.info("Training complete.")
+
+
+def balance_subset(subset, base_dataset):
+    """
+    Undersamples the majority class in a Subset to achieve a strict 50/50 balance.
+    """
+    idx_0 = []
+    idx_1 = []
     
+    # Iterate over the original indices in the subset
+    for idx in tqdm(subset.indices, desc="Balancing classes"):
+        # The label is the last element in the returned tuple from the dataset
+        label = base_dataset[idx][-1].item()
+        if label == 0:
+            idx_0.append(idx)
+        else:
+            idx_1.append(idx)
+            
+    minority_count = min(len(idx_0), len(idx_1))
     
+    # Randomly sample from both to match the minority count
+    random.seed(42)
+    balanced_idx_0 = random.sample(idx_0, minority_count)
+    balanced_idx_1 = random.sample(idx_1, minority_count)
+    
+    balanced_indices = balanced_idx_0 + balanced_idx_1
+    random.shuffle(balanced_indices)
+    
+    return Subset(base_dataset, balanced_indices)
+
+
 def main():
     """Main function to preprocess data and load datasets based on task type."""
     # Initialize logger
@@ -255,14 +285,10 @@ def main():
     # Process datasets
     dataset_train, dataset_test = get_train_test_datasets(args, logger)
 
-
     logger.info("Splitting dataset into train, validation, and test indices.")
     assert args.num_folds == 5, "num_folds should be 5."
     splits = stratified_split(dataset_train, percentage=1/args.num_folds, random_state=42)
     train_indices, val_indices, test_indices = get_train_val_test_indices(splits=splits)
-
-
-
 
     if 'BookMIA' not in args.train_dataset:
         logger.info(f"for {args.train_dataset} splitting to {args.num_folds} folds")
@@ -283,6 +309,12 @@ def main():
 
     logger.info(f"Running fold {args.fold_to_run + 1} of {args.num_folds}.")
     train_data, val_data, test_data = get_train_test_val_subsets(args, train_indices, val_indices, test_indices, args.fold_to_run, dataset_train, dataset_test)
+    
+    # --- הוספת מנגנון האיזון ---
+    logger.info("Balancing the training dataset to enforce a strict 50/50 class balance.")
+    train_data = balance_subset(train_data, dataset_train)
+    # ---------------------------
+
     logger.info("Creating dataloaders for training, validation, and test sets.")    
     dataloader_train = DataLoader(
         train_data,          # Your dataset instance
