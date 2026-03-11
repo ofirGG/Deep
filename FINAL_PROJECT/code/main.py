@@ -157,9 +157,7 @@ def get_train_test_val_subsets(args, train_indices, val_indices, test_indices, f
         test_data = test_dataset
     return train_data, val_data, test_data
 
-
 def train_one_epoch(model, dataloader, criterion, optimizer, scheduler, device, input_type='LOS'):
-    """Trains the model for one epoch."""
     model.train()
     total_loss = 0
     all_labels, all_predictions = [], []
@@ -172,8 +170,14 @@ def train_one_epoch(model, dataloader, criterion, optimizer, scheduler, device, 
             predictions = model(sorted_TDS_normalized, normalized_ATP, ATP_R).reshape(-1)
         else:
             raise ValueError("Invalid input type.")
+            
         loss = criterion(predictions, labels.float())
         loss.backward()
+        
+        # --- FIX 1: GRADIENT CLIPPING ---
+        # This prevents the spikes seen in your WandB val_loss charts
+        torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+        
         optimizer.step()
         scheduler.step()
         
@@ -183,6 +187,10 @@ def train_one_epoch(model, dataloader, criterion, optimizer, scheduler, device, 
     
     fpr, tpr, _ = roc_curve(np.array(all_labels, dtype=bool), np.array(all_predictions))
     return total_loss / len(dataloader), auc(fpr, tpr)
+
+# In main(), ensure weight_decay is passed. If args.weight_decay is 0, set it to 1e-3.
+weight_decay_val = args.weight_decay if args.weight_decay > 0 else 1e-3
+optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=weight_decay_val)
 
 def evaluate(model, dataloader, criterion, device, desc="Validation", input_type='LOS'):
     """Evaluates the model on validation or test data."""
