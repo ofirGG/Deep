@@ -5,7 +5,6 @@ from utils.constants import MODEL_VOCAB_SIZES
 from einops import repeat
 from vit_pytorch import ViT
 from utils.Architectures_utils import *
-
 def get_model(args, max_sequence_length, actual_sequence_length, input_dim, input_shape):
     model_mapping = {
         # LOS-based
@@ -35,16 +34,6 @@ class ATP_R_MLP(nn.Module):
         self.actual_sequence_length = actual_sequence_length
         
         self.param_for_normalized_ATP = nn.Parameter(torch.randn(1, 1, self.hidden_dim))
-        
-        # --- NEW: Early Fusion Projector for 4 Scalar Stats ---
-        self.stats_projector = nn.Sequential(
-            nn.Linear(4, 64),
-            nn.LayerNorm(64),
-            nn.GELU(),
-            nn.Dropout(p=0.1),
-            nn.Linear(64, self.hidden_dim)
-        )
-        
         if self.args.rank_encoding == 'scale_encoding':
             self.param_for_ATP_R = nn.Parameter(torch.randn(1, 1, self.hidden_dim))        
         elif self.args.rank_encoding == 'one_hot_encoding':
@@ -68,7 +57,6 @@ class ATP_R_MLP(nn.Module):
 
         # Output act
         self.sigmoid = nn.Sigmoid()
-
     def compute_encoded_ATP_R(self, normalized_ATP, ATP_R):
         """
         Computes encoded_ATP_R based on normalized_ATP and ATP_R.
@@ -78,21 +66,7 @@ class ATP_R_MLP(nn.Module):
         return normalized_ATP * encoded_ATP_R.unsqueeze(-1) * self.param_for_ATP_R
 
     def forward(self, sorted_TDS_normalized, normalized_ATP, ATP_R):
-        
-        # --- NEW: Extract Stats from the Tail (with FP32 safeguard) ---
-        tds_safe = torch.nan_to_num(sorted_TDS_normalized, nan=0.0).to(torch.float32)
-        probs = F.softmax(tds_safe, dim=-1)
-        safe_probs = torch.clamp(probs, min=1e-7)
-        
-        entropy = -(probs * torch.log(safe_probs)).sum(dim=-1, keepdim=True)
-        delta_entropy = torch.zeros_like(entropy)
-        delta_entropy[:, 1:, :] = entropy[:, 1:, :] - entropy[:, :-1, :]
-        variance = torch.var(probs, dim=-1, keepdim=True) + 1e-8
-        dist_range = (torch.max(probs, dim=-1, keepdim=True).values - torch.min(probs, dim=-1, keepdim=True).values) + 1e-8
-        
-        raw_stats = torch.cat([entropy, delta_entropy, variance, dist_range], dim=-1)
-        encoded_stats = self.stats_projector(raw_stats)
-        # -------------------------------------------------------------
+
 
         # Encoding one-hot rank
         if self.args.rank_encoding == 'scale_encoding':
@@ -104,10 +78,7 @@ class ATP_R_MLP(nn.Module):
                     
         # Encoding normalized mark
         encoded_normalized_ATP = normalized_ATP * self.param_for_normalized_ATP
-        
-        # --- NEW: Add explicitly computed stats to the baseline sum ---
-        x = encoded_ATP_R + encoded_normalized_ATP + encoded_stats
-        
+        x = encoded_ATP_R + encoded_normalized_ATP
         x = x.flatten(start_dim=1)
         
         for i in range(self.num_layers):
@@ -116,6 +87,7 @@ class ATP_R_MLP(nn.Module):
                 x = self.batch_norms[i](x)
                 x = F.relu(x)
                 x = F.dropout(x, p=self.dropout)
+
 
         return self.sigmoid(x).squeeze(-1)  # Apply sigmoid for binary classification
 
@@ -136,16 +108,6 @@ class ATP_R_Transf(nn.Module):
         assert self.pool in {'cls', 'mean'}, 'pool type must be either cls (cls token) or mean (mean pooling)'
 
         self.param_for_normalized_ATP = nn.Parameter(torch.randn(1, 1, self.hidden_dim))
-        
-        # --- NEW: Early Fusion Projector for 4 Scalar Stats ---
-        self.stats_projector = nn.Sequential(
-            nn.Linear(4, 64),
-            nn.LayerNorm(64),
-            nn.GELU(),
-            nn.Dropout(p=0.1),
-            nn.Linear(64, self.hidden_dim)
-        )
-        
         if self.args.rank_encoding == 'scale_encoding':
             self.param_for_ATP_R = nn.Parameter(torch.randn(1, 1, self.hidden_dim))        
         elif self.args.rank_encoding == 'one_hot_encoding':
@@ -156,6 +118,8 @@ class ATP_R_Transf(nn.Module):
         else:
             raise ValueError("Invalid encoding type. Please choose either 'scale_encoding' or 'one_hot_encoding'.")
         
+        
+
         # CLS token
         self.cls_token = nn.Parameter(torch.randn(1, 1, self.hidden_dim))
 
@@ -186,21 +150,6 @@ class ATP_R_Transf(nn.Module):
         return normalized_ATP * encoded_ATP_R.unsqueeze(-1) * self.param_for_ATP_R
     
     def forward(self, sorted_TDS_normalized, normalized_ATP, ATP_R):
-        
-        # --- NEW: Extract Stats from the Tail (with FP32 safeguard) ---
-        tds_safe = torch.nan_to_num(sorted_TDS_normalized, nan=0.0).to(torch.float32)
-        probs = F.softmax(tds_safe, dim=-1)
-        safe_probs = torch.clamp(probs, min=1e-7)
-        
-        entropy = -(probs * torch.log(safe_probs)).sum(dim=-1, keepdim=True)
-        delta_entropy = torch.zeros_like(entropy)
-        delta_entropy[:, 1:, :] = entropy[:, 1:, :] - entropy[:, :-1, :]
-        variance = torch.var(probs, dim=-1, keepdim=True) + 1e-8
-        dist_range = (torch.max(probs, dim=-1, keepdim=True).values - torch.min(probs, dim=-1, keepdim=True).values) + 1e-8
-        
-        raw_stats = torch.cat([entropy, delta_entropy, variance, dist_range], dim=-1)
-        encoded_stats = self.stats_projector(raw_stats)
-        # -------------------------------------------------------------
             
         # Encoding one-hot rank
         if self.args.rank_encoding == 'scale_encoding':
@@ -212,10 +161,9 @@ class ATP_R_Transf(nn.Module):
                     
         # Encoding normalized mark
         encoded_normalized_ATP = normalized_ATP * self.param_for_normalized_ATP
-        
-        # --- NEW: Add explicitly computed stats to the baseline sum ---
-        x = encoded_ATP_R + encoded_normalized_ATP + encoded_stats
+        x = encoded_ATP_R + encoded_normalized_ATP
 
+    
         # Add [CLS] token
         b, n, _ = x.shape
         cls_tokens = repeat(self.cls_token, '1 1 d -> b 1 d', b=b)  # Shape: [B, 1, hidden_dim]
@@ -256,16 +204,8 @@ class LOS_Net(nn.Module):
         
         self.param_for_normalized_ATP = nn.Parameter(torch.randn(1, 1, self.hidden_dim // 2))
 
-        # --- NEW: Early Fusion Projector for 4 Scalar Stats ---
-        # Note: Projects to hidden_dim // 2 to match LOS_Net scaling
-        self.stats_projector = nn.Sequential(
-            nn.Linear(4, 64),
-            nn.LayerNorm(64),
-            nn.GELU(),
-            nn.Dropout(p=0.1),
-            nn.Linear(64, self.hidden_dim // 2)
-        )
 
+        self.param_for_normalized_ATP = nn.Parameter(torch.randn(1, 1, self.hidden_dim // 2))
         if self.args.rank_encoding == 'scale_encoding':
             self.param_for_ATP_R = nn.Parameter(torch.randn(1, 1, self.hidden_dim // 2))        
         elif self.args.rank_encoding == 'one_hot_encoding':
@@ -275,6 +215,7 @@ class LOS_Net(nn.Module):
             )
         else:
             raise ValueError("Invalid encoding type. Please choose either 'scale_encoding' or 'one_hot_encoding'.")
+        
         
         
         # Input embedding layer
@@ -309,22 +250,18 @@ class LOS_Net(nn.Module):
         return normalized_ATP * encoded_ATP_R.unsqueeze(-1) * self.param_for_ATP_R
     
     def forward(self, sorted_TDS_normalized, normalized_ATP, ATP_R):
-        
-        # --- NEW: Extract Stats from the Tail (with FP32 safeguard) ---
-        tds_safe = torch.nan_to_num(sorted_TDS_normalized, nan=0.0).to(torch.float32)
-        probs = F.softmax(tds_safe, dim=-1)
-        safe_probs = torch.clamp(probs, min=1e-7)
-        
-        entropy = -(probs * torch.log(safe_probs)).sum(dim=-1, keepdim=True)
-        delta_entropy = torch.zeros_like(entropy)
-        delta_entropy[:, 1:, :] = entropy[:, 1:, :] - entropy[:, :-1, :]
-        variance = torch.var(probs, dim=-1, keepdim=True) + 1e-8
-        dist_range = (torch.max(probs, dim=-1, keepdim=True).values - torch.min(probs, dim=-1, keepdim=True).values) + 1e-8
-        
-        raw_stats = torch.cat([entropy, delta_entropy, variance, dist_range], dim=-1)
-        encoded_stats = self.stats_projector(raw_stats)
-        # -------------------------------------------------------------
+        """
+        Forward pass for LOS_Net.
 
+        Args:
+            sorted_TDS_normalized (torch.Tensor): Shape [B, N, V].
+            normalized_ATP (torch.Tensor): Shape [B, N, 1].
+            ATP_R (torch.Tensor): Shape [B, N].
+            sigmoid (bool): Whether to apply sigmoid activation. Default is True.
+
+        Returns:
+            torch.Tensor: Output tensor of shape [B, 1] (if sigmoid=True) or raw logits (if sigmoid=False).
+        """
         # Encoding one-hot rank
         if self.args.rank_encoding == 'scale_encoding':
             encoded_ATP_R = self.compute_encoded_ATP_R(normalized_ATP=normalized_ATP, ATP_R=ATP_R)
@@ -333,14 +270,16 @@ class LOS_Net(nn.Module):
         else:
             raise ValueError("Invalid encoding type. Please choose either 'scale_encoding' or 'one_hot_encoding'.")
             
+        
         # Encoding normalized mark
         encoded_normalized_ATP = normalized_ATP * self.param_for_normalized_ATP
+        
         
         # Encoding normalized vocab
         encoded_sorted_TDS_normalized = self.input_proj(sorted_TDS_normalized.to(torch.float32))
         
-        # --- NEW: Concatenating embeddings, adding explicit stats ---
-        x = torch.cat((encoded_sorted_TDS_normalized, encoded_ATP_R + encoded_normalized_ATP + encoded_stats), dim=-1)
+        # Concatenating embeddings
+        x = torch.cat((encoded_sorted_TDS_normalized, encoded_ATP_R + encoded_normalized_ATP), dim=-1)
         
         # Adding CLS token
         b, n, _ = x.shape

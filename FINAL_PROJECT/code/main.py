@@ -29,6 +29,27 @@ def balance_subset(subset, base_dataset):
     random.shuffle(balanced_indices)
     return Subset(base_dataset, balanced_indices)
 
+class BalancedFocalLoss(nn.Module):
+    def __init__(self, gamma=2.0):
+        """
+        Focal Loss tuned specifically for a perfectly balanced 50/50 dataset.
+        Alpha is implicitly 0.5, focusing entirely on the gamma penalty for hard examples.
+        """
+        super(BalancedFocalLoss, self).__init__()
+        self.gamma = gamma
+
+    def forward(self, inputs, targets):
+        inputs = torch.clamp(inputs, min=1e-7, max=1.0 - 1e-7)
+        bce_loss = F.binary_cross_entropy(inputs, targets, reduction='none')
+        
+        # pt is the probability of the true class
+        pt = torch.where(targets == 1.0, inputs, 1.0 - inputs)
+        
+        # Focal weight penalizes easy examples (where pt is high)
+        focal_weight = (1.0 - pt) ** self.gamma
+        
+        return (focal_weight * bce_loss).mean()
+
 def get_train_test_datasets(args, logger):
     """Preprocesses datasets and loads them based on the task type."""
     
@@ -361,7 +382,7 @@ def main():
         "linear", optimizer=optimizer, num_warmup_steps=num_warmup_steps, num_training_steps=num_training_steps
     )
     
-    criterion = torch.nn.BCELoss()
+    criterion = BalancedFocalLoss(gamma=2.0)
     
     
     random_number = str(int(time.time() * 1e6) % (10**10))
