@@ -11,7 +11,7 @@ from utils.file_io import save_raw_data
 
 
 
-def extract_scores(model_output, model_input, take_top_k=1000000):
+def extract_scores(model_output, model_input, take_top_k=1000):
     raw_logits = torch.concatenate(model_output['scores']).cpu()  # shape = (new_tokens, len(vocab))
 
     
