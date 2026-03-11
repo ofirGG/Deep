@@ -247,7 +247,14 @@ def balance_subset(subset, base_dataset):
     # Iterate over the original indices in the subset
     for idx in tqdm(subset.indices, desc="Balancing classes"):
         # The label is the last element in the returned tuple from the dataset
-        label = base_dataset[idx][-1].item()
+        raw_label = base_dataset[idx][-1]
+        
+        # Extract the integer value safely, whether it's a Tensor or a native int
+        if hasattr(raw_label, 'item'):
+            label = int(raw_label.item())
+        else:
+            label = int(raw_label)
+            
         if label == 0:
             idx_0.append(idx)
         else:
