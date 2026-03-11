@@ -12,6 +12,22 @@ from utils.Architectures import get_model
 from transformers import get_scheduler
 import time
 
+import random
+
+def balance_subset(subset, base_dataset):
+    
+    idx_0, idx_1 = [], []
+    for idx in tqdm(subset.indices, desc="Balancing classes"):
+        raw_label = base_dataset[idx][-1]
+        label = int(raw_label.item()) if hasattr(raw_label, 'item') else int(raw_label)
+        if label == 0: idx_0.append(idx)
+        else: idx_1.append(idx)
+            
+    minority_count = min(len(idx_0), len(idx_1))
+    random.seed(42)
+    balanced_indices = random.sample(idx_0, minority_count) + random.sample(idx_1, minority_count)
+    random.shuffle(balanced_indices)
+    return Subset(base_dataset, balanced_indices)
 
 def get_train_test_datasets(args, logger):
     """Preprocesses datasets and loads them based on the task type."""
@@ -129,6 +145,7 @@ def train_one_epoch(model, dataloader, criterion, optimizer, scheduler, device, 
             raise ValueError("Invalid input type.")
         loss = criterion(predictions, labels.float())
         loss.backward()
+        torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
         optimizer.step()
         scheduler.step()
         
@@ -283,6 +300,10 @@ def main():
 
     logger.info(f"Running fold {args.fold_to_run + 1} of {args.num_folds}.")
     train_data, val_data, test_data = get_train_test_val_subsets(args, train_indices, val_indices, test_indices, args.fold_to_run, dataset_train, dataset_test)
+    
+    logger.info("Balancing training data to strict 50/50 ratio...")
+    train_data = balance_subset(train_data, dataset_train)
+
     logger.info("Creating dataloaders for training, validation, and test sets.")    
     dataloader_train = DataLoader(
         train_data,          # Your dataset instance
@@ -327,7 +348,8 @@ def main():
     args.total_params = total_params
     
     logger.info("Creating optimizer and scheduler.")
-    optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
+    weight_decay_val = args.weight_decay if args.weight_decay > 0 else 1e-4
+    optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=weight_decay_val)
     
     # Define the number of training steps
     num_training_steps = len(dataloader_train) * args.num_epochs  # Total training steps

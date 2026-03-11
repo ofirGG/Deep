@@ -202,19 +202,18 @@ def process_file(params):
             return ATP_R
             
 
-        def normalize_sorted_probs(raw_probs: torch.Tensor) -> torch.Tensor:
+        def normalize_sorted_probs(raw_probs: torch.Tensor, fixed_k: int = 1000) -> torch.Tensor:
             """
-            Normalizes the sorted raw probabilities excluding the last two columns.
-            
-            Args:
-                raw_probs (torch.Tensor): Input tensor with shape (batch_size, num_classes).
-                
-            Returns:
-                torch.Tensor: Normalized sorted probabilities.
+            Normalizes the sorted raw probabilities using a stable Fixed-K window.
             """
             sorted_raw_probs = torch.sort(raw_probs[:, :-2], descending=True)[0]
-            mu = torch.mean(sorted_raw_probs, dim=-1, keepdim=True)
-            std = torch.std(sorted_raw_probs, dim=-1, keepdim=True)
+            
+            # Compute stable mu and std using a FIXED K to eliminate batch variance
+            stable_probs_for_stats = sorted_raw_probs[:, :fixed_k]
+            mu = torch.mean(stable_probs_for_stats, dim=-1, keepdim=True)
+            std = torch.std(stable_probs_for_stats, dim=-1, keepdim=True) + 1e-8
+            
+            # Normalize the entire sequence
             sorted_raw_probs_normalized = (sorted_raw_probs - mu) / std
             
             return sorted_raw_probs_normalized, mu, std
