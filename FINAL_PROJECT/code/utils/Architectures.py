@@ -26,7 +26,6 @@ def get_model(args, max_sequence_length, actual_sequence_length, input_dim, inpu
 class ATP_R_MLP(nn.Module):
 
     def __init__(self, args, actual_sequence_length):
-
         super(ATP_R_MLP, self).__init__()        
         self.args = args
         self.hidden_dim = args.hidden_dim
@@ -36,14 +35,6 @@ class ATP_R_MLP(nn.Module):
         
         self.param_for_normalized_ATP = nn.Parameter(torch.randn(1, 1, self.hidden_dim))
         
-        # Entropy and Delta Entropy
-        self.param_for_entropy = nn.Parameter(torch.randn(1, 1, self.hidden_dim))
-        self.param_for_delta_entropy = nn.Parameter(torch.randn(1, 1, self.hidden_dim))
-        
-        # Distribution Statistics (Variance and Range)
-        self.param_for_variance = nn.Parameter(torch.randn(1, 1, self.hidden_dim))
-        self.param_for_range = nn.Parameter(torch.randn(1, 1, self.hidden_dim))
-
         if self.args.rank_encoding == 'scale_encoding':
             self.param_for_ATP_R = nn.Parameter(torch.randn(1, 1, self.hidden_dim))        
         elif self.args.rank_encoding == 'one_hot_encoding':
@@ -51,18 +42,27 @@ class ATP_R_MLP(nn.Module):
         else:
             raise ValueError("Invalid encoding type.")
 
+        # --- Early Fusion Projector for 4 Scalar Stats ---
+        self.stats_projector = nn.Sequential(
+            nn.Linear(4, 32),
+            nn.LayerNorm(32),
+            nn.GELU(),
+            nn.Dropout(p=0.3),
+            nn.Linear(32, self.hidden_dim)
+        )
+
         # --- Feature Fusion Layer (Bottleneck Architecture) ---
+        # Input is now hidden_dim * 3 (ATP_R, Normalized_ATP, Projected_Stats)
         self.feature_fusion = nn.Sequential(
-            nn.Linear(self.hidden_dim * 6, self.hidden_dim // 2),
+            nn.Linear(self.hidden_dim * 3, self.hidden_dim // 2),
             nn.LayerNorm(self.hidden_dim // 2),
             nn.GELU(),
-            nn.Dropout(p=0.4), # Increased dropout to prevent memorization
+            nn.Dropout(p=0.4), 
             nn.Linear(self.hidden_dim // 2, self.hidden_dim),
             nn.LayerNorm(self.hidden_dim),
             nn.Dropout(p=self.dropout)
         )
         
-
         # Linear layers
         self.lin_layers = nn.ModuleList()
         self.batch_norms = nn.ModuleList()
@@ -80,32 +80,31 @@ class ATP_R_MLP(nn.Module):
         return normalized_ATP * encoded_ATP_R.unsqueeze(-1) * self.param_for_ATP_R
 
     def forward(self, sorted_TDS_normalized, normalized_ATP, ATP_R):
-        # NaN safeguards
         sorted_TDS_normalized = torch.nan_to_num(sorted_TDS_normalized, nan=0.0)
         normalized_ATP = torch.nan_to_num(normalized_ATP, nan=0.0)
 
-        # Probabilities calculation
         tds_safe = sorted_TDS_normalized.to(torch.float32)
         probs = F.softmax(tds_safe, dim=-1)
         safe_probs = torch.clamp(probs, min=1e-7)
         
-        # Entropy calculation
         entropy = -(probs * torch.log(safe_probs)).sum(dim=-1, keepdim=True)
-        
-        # Delta Entropy calculation
         delta_entropy = torch.zeros_like(entropy)
         delta_entropy[:, 1:, :] = entropy[:, 1:, :] - entropy[:, :-1, :]
         
-        # Distribution Statistics (Variance & Range)
-        variance = torch.var(probs, dim=-1, keepdim=True)
-        dist_range = torch.max(probs, dim=-1, keepdim=True).values - torch.min(probs, dim=-1, keepdim=True).values
+        variance = torch.var(probs, dim=-1, keepdim=True) + 1e-8
+        dist_range = (torch.max(probs, dim=-1, keepdim=True).values - torch.min(probs, dim=-1, keepdim=True).values) + 1e-8
         
-        # Encoding features
-        encoded_entropy = entropy.to(sorted_TDS_normalized.dtype) * self.param_for_entropy
-        encoded_delta_entropy = delta_entropy.to(sorted_TDS_normalized.dtype) * self.param_for_delta_entropy
-        encoded_variance = variance.to(sorted_TDS_normalized.dtype) * self.param_for_variance
-        encoded_range = dist_range.to(sorted_TDS_normalized.dtype) * self.param_for_range
+        # 1. Combine and Project Scalar Stats
+        raw_stats = torch.cat([
+            entropy.to(sorted_TDS_normalized.dtype),
+            delta_entropy.to(sorted_TDS_normalized.dtype),
+            variance.to(sorted_TDS_normalized.dtype),
+            dist_range.to(sorted_TDS_normalized.dtype)
+        ], dim=-1)
+        
+        encoded_stats = self.stats_projector(raw_stats)
 
+        # 2. Get Rank and Prob Embeddings
         if self.args.rank_encoding == 'scale_encoding':
             encoded_ATP_R = self.compute_encoded_ATP_R(normalized_ATP=normalized_ATP, ATP_R=ATP_R)
         elif self.args.rank_encoding == 'one_hot_encoding':
@@ -113,10 +112,9 @@ class ATP_R_MLP(nn.Module):
                     
         encoded_normalized_ATP = normalized_ATP * self.param_for_normalized_ATP
         
-        # --- Concatenation and Feature Fusion ---
-        raw_features = torch.cat([encoded_ATP_R, encoded_normalized_ATP, encoded_entropy, encoded_delta_entropy, encoded_variance, encoded_range], dim=-1)
+        # 3. Concatenate and Feature Fusion
+        raw_features = torch.cat([encoded_ATP_R, encoded_normalized_ATP, encoded_stats], dim=-1)
         x = self.feature_fusion(raw_features)
-        # ----------------------------------------
         
         x = x.flatten(start_dim=1)
         
@@ -132,9 +130,7 @@ class ATP_R_MLP(nn.Module):
 
 
 class ATP_R_Transf(nn.Module):
-    
     def __init__(self, args, max_sequence_length, input_dim=1):
-        
         super(ATP_R_Transf, self).__init__()
         self.args = args
         self.input_dim = input_dim
@@ -148,14 +144,6 @@ class ATP_R_Transf(nn.Module):
         assert self.pool in {'cls', 'mean'}, "Pool type must be either 'cls' or 'mean'"
 
         self.param_for_normalized_ATP = nn.Parameter(torch.randn(1, 1, self.hidden_dim))
-        
-        # Entropy and Delta Entropy
-        self.param_for_entropy = nn.Parameter(torch.randn(1, 1, self.hidden_dim))
-        self.param_for_delta_entropy = nn.Parameter(torch.randn(1, 1, self.hidden_dim))
-        
-        # Distribution Statistics (Variance and Range)
-        self.param_for_variance = nn.Parameter(torch.randn(1, 1, self.hidden_dim))
-        self.param_for_range = nn.Parameter(torch.randn(1, 1, self.hidden_dim))
 
         if self.args.rank_encoding == 'scale_encoding':
             self.param_for_ATP_R = nn.Parameter(torch.randn(1, 1, self.hidden_dim))        
@@ -164,12 +152,21 @@ class ATP_R_Transf(nn.Module):
         else:
             raise ValueError("Invalid encoding type.")
 
+        # --- Early Fusion Projector for 4 Scalar Stats ---
+        self.stats_projector = nn.Sequential(
+            nn.Linear(4, 32),
+            nn.LayerNorm(32),
+            nn.GELU(),
+            nn.Dropout(p=0.3),
+            nn.Linear(32, self.hidden_dim)
+        )
+
         # --- Feature Fusion Layer (Bottleneck Architecture) ---
         self.feature_fusion = nn.Sequential(
-            nn.Linear(self.hidden_dim * 6, self.hidden_dim // 2),
+            nn.Linear(self.hidden_dim * 3, self.hidden_dim // 2),
             nn.LayerNorm(self.hidden_dim // 2),
             nn.GELU(),
-            nn.Dropout(p=0.4), # Increased dropout to prevent memorization
+            nn.Dropout(p=0.4),
             nn.Linear(self.hidden_dim // 2, self.hidden_dim),
             nn.LayerNorm(self.hidden_dim),
             nn.Dropout(p=self.dropout)
@@ -196,32 +193,31 @@ class ATP_R_Transf(nn.Module):
         return normalized_ATP * encoded_ATP_R.unsqueeze(-1) * self.param_for_ATP_R
     
     def forward(self, sorted_TDS_normalized, normalized_ATP, ATP_R):
-        # NaN safeguards
         sorted_TDS_normalized = torch.nan_to_num(sorted_TDS_normalized, nan=0.0)
         normalized_ATP = torch.nan_to_num(normalized_ATP, nan=0.0)
 
-        # Probabilities calculation
         tds_safe = sorted_TDS_normalized.to(torch.float32)
         probs = F.softmax(tds_safe, dim=-1)
         safe_probs = torch.clamp(probs, min=1e-7)
         
-        # Entropy calculation
         entropy = -(probs * torch.log(safe_probs)).sum(dim=-1, keepdim=True)
-        
-        # Delta Entropy calculation
         delta_entropy = torch.zeros_like(entropy)
         delta_entropy[:, 1:, :] = entropy[:, 1:, :] - entropy[:, :-1, :]
         
-        # Distribution Statistics (Variance & Range)
-        variance = torch.var(probs, dim=-1, keepdim=True)
-        dist_range = torch.max(probs, dim=-1, keepdim=True).values - torch.min(probs, dim=-1, keepdim=True).values
+        variance = torch.var(probs, dim=-1, keepdim=True) + 1e-8
+        dist_range = (torch.max(probs, dim=-1, keepdim=True).values - torch.min(probs, dim=-1, keepdim=True).values) + 1e-8
         
-        # Encoding features
-        encoded_entropy = entropy.to(sorted_TDS_normalized.dtype) * self.param_for_entropy
-        encoded_delta_entropy = delta_entropy.to(sorted_TDS_normalized.dtype) * self.param_for_delta_entropy
-        encoded_variance = variance.to(sorted_TDS_normalized.dtype) * self.param_for_variance
-        encoded_range = dist_range.to(sorted_TDS_normalized.dtype) * self.param_for_range
+        # 1. Combine and Project Scalar Stats
+        raw_stats = torch.cat([
+            entropy.to(sorted_TDS_normalized.dtype),
+            delta_entropy.to(sorted_TDS_normalized.dtype),
+            variance.to(sorted_TDS_normalized.dtype),
+            dist_range.to(sorted_TDS_normalized.dtype)
+        ], dim=-1)
+        
+        encoded_stats = self.stats_projector(raw_stats)
             
+        # 2. Get Rank and Prob Embeddings
         if self.args.rank_encoding == 'scale_encoding':
             encoded_ATP_R = self.compute_encoded_ATP_R(normalized_ATP=normalized_ATP, ATP_R=ATP_R)
         elif self.args.rank_encoding == 'one_hot_encoding':
@@ -229,8 +225,8 @@ class ATP_R_Transf(nn.Module):
                     
         encoded_normalized_ATP = normalized_ATP * self.param_for_normalized_ATP
         
-        # --- Concatenation and Feature Fusion ---
-        raw_features = torch.cat([encoded_ATP_R, encoded_normalized_ATP, encoded_entropy, encoded_delta_entropy, encoded_variance, encoded_range], dim=-1)
+        # 3. Concatenate and Feature Fusion
+        raw_features = torch.cat([encoded_ATP_R, encoded_normalized_ATP, encoded_stats], dim=-1)
         x = self.feature_fusion(raw_features)
 
         b, n, _ = x.shape
@@ -269,14 +265,6 @@ class LOS_Net(nn.Module):
         assert self.pool in {'cls', 'mean'}, "Pool type must be 'cls' or 'mean'"
         
         self.param_for_normalized_ATP = nn.Parameter(torch.randn(1, 1, self.hidden_dim // 2))
-        
-        # Entropy and Delta Entropy
-        self.param_for_entropy = nn.Parameter(torch.randn(1, 1, self.hidden_dim // 2))
-        self.param_for_delta_entropy = nn.Parameter(torch.randn(1, 1, self.hidden_dim // 2))
-        
-        # Distribution Statistics (Variance and Range)
-        self.param_for_variance = nn.Parameter(torch.randn(1, 1, self.hidden_dim // 2))
-        self.param_for_range = nn.Parameter(torch.randn(1, 1, self.hidden_dim // 2))
 
         if self.args.rank_encoding == 'scale_encoding':
             self.param_for_ATP_R = nn.Parameter(torch.randn(1, 1, self.hidden_dim // 2))        
@@ -285,12 +273,23 @@ class LOS_Net(nn.Module):
         else:
             raise ValueError("Invalid encoding type.")
             
-        # --- Feature Fusion Layer (Bottleneck Architecture) ---
+        # --- Early Fusion Projector for 4 Scalar Stats ---
+        # Note: Projects to hidden_dim // 2 to match LOS_Net scaling
+        self.stats_projector = nn.Sequential(
+            nn.Linear(4, 32),
+            nn.LayerNorm(32),
+            nn.GELU(),
+            nn.Dropout(p=0.3),
+            nn.Linear(32, self.hidden_dim // 2)
+        )
+
+        # --- Feature Fusion Layer ---
+        # Input is now (hidden_dim // 2) * 3
         self.feature_fusion = nn.Sequential(
-            nn.Linear((self.hidden_dim * 6) // 2, self.hidden_dim // 4),
+            nn.Linear((self.hidden_dim // 2) * 3, self.hidden_dim // 4),
             nn.LayerNorm(self.hidden_dim // 4),
             nn.GELU(),
-            nn.Dropout(p=0.4), # Increased dropout to prevent memorization
+            nn.Dropout(p=0.4),
             nn.Linear(self.hidden_dim // 4, self.hidden_dim // 2),
             nn.LayerNorm(self.hidden_dim // 2),
             nn.Dropout(p=self.dropout)
@@ -319,32 +318,31 @@ class LOS_Net(nn.Module):
         return normalized_ATP * encoded_ATP_R.unsqueeze(-1) * self.param_for_ATP_R
     
     def forward(self, sorted_TDS_normalized, normalized_ATP, ATP_R):
-        # NaN safeguards
         sorted_TDS_normalized = torch.nan_to_num(sorted_TDS_normalized, nan=0.0)
         normalized_ATP = torch.nan_to_num(normalized_ATP, nan=0.0)
 
-        # Probabilities calculation
         tds_safe = sorted_TDS_normalized.to(torch.float32)
         probs = F.softmax(tds_safe, dim=-1)
         safe_probs = torch.clamp(probs, min=1e-7)
         
-        # Entropy calculation
         entropy = -(probs * torch.log(safe_probs)).sum(dim=-1, keepdim=True)
-        
-        # Delta Entropy calculation
         delta_entropy = torch.zeros_like(entropy)
         delta_entropy[:, 1:, :] = entropy[:, 1:, :] - entropy[:, :-1, :]
         
-        # Distribution Statistics (Variance & Range)
-        variance = torch.var(probs, dim=-1, keepdim=True)
-        dist_range = torch.max(probs, dim=-1, keepdim=True).values - torch.min(probs, dim=-1, keepdim=True).values
+        variance = torch.var(probs, dim=-1, keepdim=True) + 1e-8
+        dist_range = (torch.max(probs, dim=-1, keepdim=True).values - torch.min(probs, dim=-1, keepdim=True).values) + 1e-8
         
-        # Encoding features
-        encoded_entropy = entropy.to(sorted_TDS_normalized.dtype) * self.param_for_entropy
-        encoded_delta_entropy = delta_entropy.to(sorted_TDS_normalized.dtype) * self.param_for_delta_entropy
-        encoded_variance = variance.to(sorted_TDS_normalized.dtype) * self.param_for_variance
-        encoded_range = dist_range.to(sorted_TDS_normalized.dtype) * self.param_for_range
+        # 1. Combine and Project Scalar Stats
+        raw_stats = torch.cat([
+            entropy.to(sorted_TDS_normalized.dtype),
+            delta_entropy.to(sorted_TDS_normalized.dtype),
+            variance.to(sorted_TDS_normalized.dtype),
+            dist_range.to(sorted_TDS_normalized.dtype)
+        ], dim=-1)
+        
+        encoded_stats = self.stats_projector(raw_stats)
 
+        # 2. Get Rank and Prob Embeddings
         if self.args.rank_encoding == 'scale_encoding':
             encoded_ATP_R = self.compute_encoded_ATP_R(normalized_ATP=normalized_ATP, ATP_R=ATP_R)
         elif self.args.rank_encoding == 'one_hot_encoding':
@@ -354,10 +352,9 @@ class LOS_Net(nn.Module):
         
         encoded_sorted_TDS_normalized = self.input_proj(sorted_TDS_normalized.to(torch.float32))
         
-        # --- Concatenation and Feature Fusion ---
-        raw_features = torch.cat([encoded_ATP_R, encoded_normalized_ATP, encoded_entropy, encoded_delta_entropy, encoded_variance, encoded_range], dim=-1)
+        # 3. Concatenate and Feature Fusion
+        raw_features = torch.cat([encoded_ATP_R, encoded_normalized_ATP, encoded_stats], dim=-1)
         x_scalars = self.feature_fusion(raw_features)
-        # ----------------------------------------
         
         x = torch.cat((encoded_sorted_TDS_normalized, x_scalars), dim=-1)
         
