@@ -1,0 +1,2 @@
+"Step","OUR: Mistral + Movies - avg_inference_time_per_sample_s","OUR: Mistral + Movies - avg_inference_time_per_sample_s__MIN","OUR: Mistral + Movies - avg_inference_time_per_sample_s__MAX","BASE: Mistral + Movies - avg_inference_time_per_sample_s","BASE: Mistral + Movies - avg_inference_time_per_sample_s__MIN","BASE: Mistral + Movies - avg_inference_time_per_sample_s__MAX"
+"100","0.001446225643157959","0.001446225643157959","0.001446225643157959","0.0012081480026245118","0.0012081480026245118","0.0012081480026245118"

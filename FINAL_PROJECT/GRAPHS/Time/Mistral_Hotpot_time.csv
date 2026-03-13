@@ -1,0 +1,2 @@
+"Step","OUR: Mistral + Hotpot - avg_inference_time_per_sample_s","OUR: Mistral + Hotpot - avg_inference_time_per_sample_s__MIN","OUR: Mistral + Hotpot - avg_inference_time_per_sample_s__MAX","BASE: Mistral + Hotpot - avg_inference_time_per_sample_s","BASE: Mistral + Hotpot - avg_inference_time_per_sample_s__MIN","BASE: Mistral + Hotpot - avg_inference_time_per_sample_s__MAX"
+"100","0.0014355993270874024","0.0014355993270874024","0.0014355993270874024","0.001244051456451416","0.001244051456451416","0.001244051456451416"

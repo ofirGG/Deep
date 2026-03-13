@@ -1,0 +1,2 @@
+"Step","OUR: Qwen + Trivia - avg_inference_time_per_sample_s","OUR: Qwen + Trivia - avg_inference_time_per_sample_s__MIN","OUR: Qwen + Trivia - avg_inference_time_per_sample_s__MAX","BASE: Qwen + Trivia - avg_inference_time_per_sample_s","BASE: Qwen + Trivia - avg_inference_time_per_sample_s__MIN","BASE: Qwen + Trivia - avg_inference_time_per_sample_s__MAX"
+"100","0.001473977565765381","0.001473977565765381","0.001473977565765381","0.001256256103515625","0.001256256103515625","0.001256256103515625"

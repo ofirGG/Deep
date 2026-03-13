@@ -1,0 +1,2 @@
+"Step","OUR: Mistral + Trivia - avg_inference_time_per_sample_s","OUR: Mistral + Trivia - avg_inference_time_per_sample_s__MIN","OUR: Mistral + Trivia - avg_inference_time_per_sample_s__MAX","BASE: Mistral + Trivia - avg_inference_time_per_sample_s","BASE: Mistral + Trivia - avg_inference_time_per_sample_s__MIN","BASE: Mistral + Trivia - avg_inference_time_per_sample_s__MAX"
+"100","0.0014712214469909668","0.0014712214469909668","0.0014712214469909668","0.0012461066246032715","0.0012461066246032715","0.0012461066246032715"

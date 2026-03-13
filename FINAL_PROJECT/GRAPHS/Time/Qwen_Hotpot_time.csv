@@ -1,0 +1,2 @@
+"Step","OUR: Qwen + Hotpot - avg_inference_time_per_sample_s","OUR: Qwen + Hotpot - avg_inference_time_per_sample_s__MIN","OUR: Qwen + Hotpot - avg_inference_time_per_sample_s__MAX","BASE: Qwen + Hotpot - avg_inference_time_per_sample_s","BASE: Qwen + Hotpot - avg_inference_time_per_sample_s__MIN","BASE: Qwen + Hotpot - avg_inference_time_per_sample_s__MAX"
+"100","0.0014479994773864747","0.0014479994773864747","0.0014479994773864747","0.0012044763565063476","0.0012044763565063476","0.0012044763565063476"
